@@ -1,3 +1,4 @@
+use serde::de::{self, Deserializer, Unexpected};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -20,7 +21,8 @@ pub struct SourceConfig {
     pub urls: Option<Vec<String>>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default)]
 pub struct Site {
     pub key: String,
     pub name: String,
@@ -28,10 +30,12 @@ pub struct Site {
     pub site_type: u8,
     pub api: String,
     pub jar: Option<String>,
-    pub ext: Option<String>,
+    pub ext: Option<serde_json::Value>,
     pub searchable: Option<i32>,
+    #[serde(rename = "quickSearch")]
     pub quick_search: Option<i32>,
     pub filterable: Option<i32>,
+    #[serde(rename = "playerType", deserialize_with = "de_opt_u8_str")]
     pub player_type: Option<u8>,
     pub categories: Option<Vec<Category>>,
 }
@@ -225,6 +229,45 @@ impl Flag {
             })
             .collect()
     }
+}
+
+/// Deserialize an `Option<u8>` that accepts both integers and strings.
+fn de_opt_u8_str<'de, D>(deserializer: D) -> std::result::Result<Option<u8>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    struct OptU8Visitor;
+    impl<'de> de::Visitor<'de> for OptU8Visitor {
+        type Value = Option<u8>;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            formatter.write_str("a u8 integer or string")
+        }
+
+        fn visit_none<E: de::Error>(self) -> Result<Option<u8>, E> {
+            Ok(None)
+        }
+
+        fn visit_unit<E: de::Error>(self) -> Result<Option<u8>, E> {
+            Ok(None)
+        }
+
+        fn visit_u64<E: de::Error>(self, v: u64) -> Result<Option<u8>, E> {
+            Ok(Some(v as u8))
+        }
+
+        fn visit_i64<E: de::Error>(self, v: i64) -> Result<Option<u8>, E> {
+            Ok(Some(v as u8))
+        }
+
+        fn visit_str<E: de::Error>(self, v: &str) -> Result<Option<u8>, E> {
+            v.parse::<u8>()
+                .map(Some)
+                .map_err(|_| de::Error::invalid_value(Unexpected::Str(v), &"a u8 integer as string"))
+        }
+    }
+
+    deserializer.deserialize_any(OptU8Visitor)
 }
 
 #[cfg(test)]

@@ -5,7 +5,7 @@ use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
 
 use rivu_core::error::Result;
-use rivu_core::models::{Flag, Site, Vod};
+use rivu_core::models::{Flag, Site};
 use rivu_player::MpvBackend;
 use rivu_spider::extractor::SourceExtractor;
 use rivu_spider::site_api::SiteApi;
@@ -110,7 +110,7 @@ impl App {
             None => return,
         };
         let handle = tokio::runtime::Handle::current();
-        let result = handle.block_on(self.api.detail(&site, &[vod.vod_id.clone()]));
+        let result = handle.block_on(self.api.detail(&site, std::slice::from_ref(&vod.vod_id)));
         match result {
             Ok(api_result) => {
                 if let Some(list) = api_result.list {
@@ -319,7 +319,7 @@ impl App {
                         None => return Ok(()),
                     };
                     let handle = tokio::runtime::Handle::current();
-                    let result = handle.block_on(self.api.detail(&site, &[vod.vod_id.clone()]));
+                    let result = handle.block_on(self.api.detail(&site, std::slice::from_ref(&vod.vod_id)));
                     match result {
                         Ok(api_result) => {
                             if let Some(list) = api_result.list {

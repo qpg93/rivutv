@@ -1,3 +1,4 @@
+use rivu_core::decoder::SourceDecoder;
 use rivu_core::models::*;
 use rivu_spider::extractor::SourceExtractor;
 use rivu_spider::parsers::Parser;
@@ -171,4 +172,58 @@ fn test_real_world_tvbox_config_structure() {
     assert_eq!(config.sites[1].site_type, 3);
     assert_eq!(config.sites[1].jar.as_deref(), Some("http://jar.com/spider.jar"));
     assert!(config.flags.is_some());
+}
+
+#[test]
+fn test_decoder_full_pipeline_jpeg_embedded() {
+    // Pre-computed base64 of: {"sites":[{"key":"k","name":"N","type":0,"api":"http://a.com"}]}
+    let b64 = "eyJzaXRlcyI6W3sia2V5IjoiayIsIm5hbWUiOiJOIiwidHlwZSI6MCwiYXBpIjoiaHR0cDovL2EuY29tIn1dfQ==";
+
+    let mut data = vec![0xFF, 0xD8, 0xFF, 0xE0];
+    data.extend(std::iter::repeat(0x00).take(256));
+    data.extend(b64.as_bytes());
+
+    let decoded = SourceDecoder::decode(&data).unwrap();
+    let config: SourceConfig = serde_json::from_str(&decoded).unwrap();
+    assert_eq!(config.sites[0].key, "k");
+    assert_eq!(config.sites[0].api, "http://a.com");
+}
+
+#[test]
+fn test_decoder_base64_direct() {
+    // Pre-computed base64 of: {"sites":[{"key":"k","name":"N","type":0,"api":"http://a.com"}]}
+    let b64 = "eyJzaXRlcyI6W3sia2V5IjoiayIsIm5hbWUiOiJOIiwidHlwZSI6MCwiYXBpIjoiaHR0cDovL2EuY29tIn1dfQ==";
+    let decoded = SourceDecoder::decode(b64.as_bytes()).unwrap();
+    let config: SourceConfig = serde_json::from_str(&decoded).unwrap();
+    assert_eq!(config.sites[0].key, "k");
+}
+
+#[test]
+fn test_decoder_json_with_comments_to_source_config() {
+    let json = "{\"sites\":[{\"key\":\"k\",\"name\":\"N\",\"type\":0,\"api\":\"http://a.com\"}],\"lives\":[],\"parses\":[]}// trailing comment";
+    let decoded = SourceDecoder::decode(json.as_bytes()).unwrap();
+    let config: SourceConfig = serde_json::from_str(&decoded).unwrap();
+    assert_eq!(config.sites[0].key, "k");
+}
+
+#[test]
+fn test_decoder_bmp_embedded() {
+    let b64 = "eyJzaXRlcyI6W3sia2V5IjoiayIsIm5hbWUiOiJOIiwidHlwZSI6MCwiYXBpIjoiaHR0cDovL2EuY29tIn1dfQ==";
+    let mut data = vec![0x42, 0x4D];
+    data.extend(std::iter::repeat(0xFF).take(128));
+    data.extend(b64.as_bytes());
+
+    let decoded = SourceDecoder::decode(&data).unwrap();
+    let config: SourceConfig = serde_json::from_str(&decoded).unwrap();
+    assert_eq!(config.sites[0].name, "N");
+}
+
+#[test]
+fn test_decoder_complex_source_with_comments() {
+    let json = "{\n\"spider\":\"http://spider.jar\",\n\"sites\":[\n{\"key\":\"k1\",\"name\":\"S1\",\"type\":3,\"api\":\"csp_T\"}\n],\n// live section\n\"lives\":[\n{\"name\":\"CCTV\",\"url\":\"http://live.tv\"}\n],\n\"parses\":[]\n}";
+    let decoded = SourceDecoder::decode(json.as_bytes()).unwrap();
+    let config: SourceConfig = serde_json::from_str(&decoded).unwrap();
+    assert_eq!(config.sites.len(), 1);
+    assert_eq!(config.sites[0].name, "S1");
+    assert!(config.lives.is_some());
 }

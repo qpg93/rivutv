@@ -1,3 +1,4 @@
+use rivu_core::decoder::SourceDecoder;
 use rivu_core::error::Result;
 use rivu_core::models::{AppConfig, SourceConfig};
 
@@ -26,8 +27,9 @@ impl ConfigLoader {
 
     pub async fn fetch_source(&mut self, url: &str) -> Result<&SourceConfig> {
         let resp = self.client.get(url).send().await?;
-        let text = resp.text().await?;
-        let config: SourceConfig = serde_json::from_str(&text)?;
+        let bytes = resp.bytes().await?;
+        let decoded = SourceDecoder::decode(&bytes)?;
+        let config: SourceConfig = serde_json::from_str(&decoded)?;
         self.source_config = Some(config);
         Ok(self.source_config.as_ref().unwrap())
     }
