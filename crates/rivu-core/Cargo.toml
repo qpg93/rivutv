@@ -1,0 +1,5 @@
+[package]
+name = "rivu-core"
+version = "0.1.0"
+edition = "2021"
+description = "RivuTV core types, traits, and data models"

@@ -1,0 +1,8 @@
+[package]
+name = "rivu-player"
+version = "0.1.0"
+edition = "2021"
+description = "RivuTV media playback engine"
+
+[dependencies]
+rivu-core = { path = "../rivu-core" }

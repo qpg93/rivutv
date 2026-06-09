@@ -1,0 +1,24 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/rivu-core",
+    "crates/rivu-ui",
+    "crates/rivu-spider",
+    "crates/rivu-player",
+    "crates/rivu-config",
+]
+
+[package]
+name = "rivutv"
+version = "0.1.0"
+edition = "2021"
+description = "A Linux-native TVBox/CatVod-compatible media client built with Rust"
+
+[dependencies]
+rivu-core = { path = "crates/rivu-core" }
+rivu-config = { path = "crates/rivu-config" }
+rivu-spider = { path = "crates/rivu-spider" }
+rivu-player = { path = "crates/rivu-player" }
+rivu-ui = { path = "crates/rivu-ui" }
+clap = { version = "4", features = ["derive"] }
+tokio = { version = "1", features = ["full"] }

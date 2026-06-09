@@ -1,0 +1,8 @@
+[package]
+name = "rivu-ui"
+version = "0.1.0"
+edition = "2021"
+description = "RivuTV user interface (TUI/GUI)"
+
+[dependencies]
+rivu-core = { path = "../rivu-core" }
