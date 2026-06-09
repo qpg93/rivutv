@@ -1,3 +1,7 @@
+use std::collections::HashMap;
+use std::sync::Arc;
+use std::time::Duration;
+
 use clap::Parser;
 use rivu_config::loader::ConfigLoader;
 use rivu_core::error::Result;
@@ -6,7 +10,6 @@ use rivu_spider::engine::SpiderApi;
 use rivu_spider::site_api::SiteApi;
 use rivu_spider::spider::SpiderRegistry;
 use rivu_ui::app::App;
-use std::collections::HashMap;
 
 #[derive(Parser)]
 #[command(name = "rivu")]
@@ -93,43 +96,47 @@ fn main() -> Result<()> {
                 }
             };
 
-            let mut registry = SpiderRegistry::new();
-            registry.register_builtin();
-            let engine = SpiderApi::new(SiteApi::new(), registry);
+            let engine = Arc::new(SpiderApi::new(SiteApi::new(), SpiderRegistry::new()));
+
+            let mut app = App::new();
+            app.set_sites(config.sites.clone());
+            app.search.query = keyword.clone();
 
             eprint!("Searching {} sites for '{}'", config.sites.len(), keyword);
-            let mut total = 0;
+            let mut handles = Vec::new();
             for site in &config.sites {
-                let result = rt.block_on(engine.search(site, &keyword, 1));
-                match result {
-                    Ok(api_result) => {
-                        if let Some(list) = api_result.list {
-                            if !list.is_empty() {
-                                println!("\n{} {}:", "─".repeat(4), site.name);
-                                for vod in &list {
-                                    if let Some(ref remarks) = vod.vod_remarks {
-                                        println!("  {} [{}]", vod.vod_name, remarks);
-                                    } else {
-                                        println!("  {}", vod.vod_name);
-                                    }
-                                }
-                                total += list.len();
-                            }
+                let e = engine.clone();
+                let s = site.clone();
+                let kw = keyword.clone();
+                handles.push(tokio::spawn(async move {
+                    let result = tokio::time::timeout(Duration::from_secs(10), e.search(&s, &kw, 1)).await;
+                    (s.name, result)
+                }));
+            }
+
+            for handle in handles {
+                if let Ok((_name, Ok(Ok(api_result)))) = rt.block_on(handle) {
+                    if let Some(list) = api_result.list {
+                        for vod in list {
+                            app.search.result_sites.push(_name.clone());
+                            app.search.results.push(vod);
                         }
-                        eprint!(".");
                     }
-                    Err(e) => {
-                        eprintln!("\n{} ✗ {}", site.name, e);
-                    }
+                    eprint!(".");
+                } else {
+                    eprint!(".");
                 }
             }
             eprintln!();
 
-            if total == 0 {
+            if app.search.results.is_empty() {
                 println!("No results found for '{}'", keyword);
-            } else {
-                println!("\n{} result(s) found for '{}'", total, keyword);
+                return Ok(());
             }
+
+            println!("{} result(s) found. Opening TUI...", app.search.results.len());
+            app.current = rivu_ui::app::Screen::Search;
+            app.run()?;
         }
         Cli::Play { url } => {
             let player = rivu_player::MpvBackend::new();

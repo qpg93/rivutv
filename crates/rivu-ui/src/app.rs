@@ -1,5 +1,6 @@
 use std::io;
-use std::sync::LazyLock;
+use std::sync::{Arc, LazyLock};
+use std::time::Duration;
 
 use crossterm::event::KeyCode;
 use ratatui::backend::CrosstermBackend;
@@ -21,7 +22,7 @@ static RT: LazyLock<tokio::runtime::Runtime> = LazyLock::new(|| {
 
 use crate::screens::{detail::DetailScreen, home::HomeScreen, search::SearchScreen};
 
-enum Screen {
+pub enum Screen {
     Home,
     Detail,
     Search,
@@ -31,11 +32,11 @@ pub struct App {
     pub home: HomeScreen,
     pub detail: DetailScreen,
     pub search: SearchScreen,
-    pub engine: SpiderApi,
+    pub engine: Arc<SpiderApi>,
     pub player: MpvBackend,
     pub sites: Vec<Site>,
     pub current_site_index: usize,
-    current: Screen,
+    pub current: Screen,
 }
 
 impl App {
@@ -46,7 +47,7 @@ impl App {
             home: HomeScreen::new(),
             detail: DetailScreen::new(),
             search: SearchScreen::new(),
-            engine: SpiderApi::new(SiteApi::new(), registry),
+            engine: Arc::new(SpiderApi::new(SiteApi::new(), registry)),
             player: MpvBackend::new(),
             sites: Vec::new(),
             current_site_index: 0,
@@ -317,7 +318,11 @@ impl App {
             }
             KeyCode::Enter => {
                 if !self.search.results.is_empty() {
-                    let site = match self.current_site().cloned() {
+                    let site = match self.search.result_sites.get(self.search.selected) {
+                        Some(name) => self.sites.iter().find(|s| s.name == *name).cloned(),
+                        None => self.current_site().cloned(),
+                    };
+                    let site = match site {
                         Some(s) => s,
                         None => return Ok(()),
                     };
@@ -346,23 +351,43 @@ impl App {
                         }
                     }
                 } else {
-                    let site = match self.current_site().cloned() {
-                        Some(s) => s,
-                        None => return Ok(()),
-                    };
                     let query = self.search.query.clone();
-                    if !query.is_empty() {
-                        let result = RT.block_on(self.engine.search(&site, &query, 1));
-                        match result {
-                            Ok(api_result) => {
-                                self.search.results = api_result.list.unwrap_or_default();
-                                self.search.selected = 0;
+                    if query.is_empty() {
+                        return Ok(());
+                    }
+                    self.search.results.clear();
+                    self.search.result_sites.clear();
+                    let engine = self.engine.clone();
+                    let sites = self.sites.clone();
+                    let mut handles = Vec::new();
+                    for site in &sites {
+                        let e = engine.clone();
+                        let s = site.clone();
+                        let name = site.name.clone();
+                        let q = query.clone();
+                        handles.push(tokio::spawn(async move {
+                            let result = tokio::time::timeout(Duration::from_secs(10), e.search(&s, &q, 1)).await;
+                            (name, result)
+                        }));
+                    }
+                    let results = RT.block_on(async {
+                        let mut out = Vec::new();
+                        for handle in handles {
+                            if let Ok((name, Ok(Ok(api)))) = handle.await {
+                                out.push((name, api));
                             }
-                            Err(e) => {
-                                self.home.error = Some(e.to_string());
+                        }
+                        out
+                    });
+                    for (name, result) in results {
+                        if let Some(list) = result.list {
+                            for vod in list {
+                                self.search.result_sites.push(name.clone());
+                                self.search.results.push(vod);
                             }
                         }
                     }
+                    self.search.selected = 0;
                 }
             }
             KeyCode::Down | KeyCode::Char('j') => {

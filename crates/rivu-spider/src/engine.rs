@@ -2,6 +2,7 @@ use rivu_core::error::{CoreError, Result};
 use rivu_core::models::{ApiResult, PlayInfo, Site};
 use crate::site_api::SiteApi;
 use crate::spider::{Spider, SpiderRegistry};
+use crate::CHROME_UA;
 
 #[cfg(test)]
 use std::collections::HashMap;
@@ -18,7 +19,7 @@ impl SpiderEngine {
     pub fn new() -> Self {
         Self {
             client: reqwest::Client::builder()
-                .user_agent("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36")
+                .user_agent(CHROME_UA)
                 .timeout(std::time::Duration::from_secs(10))
                 .build()
                 .unwrap(),

@@ -4,8 +4,9 @@ use rivu_core::error::Result;
 use rivu_core::models::{ApiResult, Class, PlayInfo, Site, Vod};
 use serde_json::Value;
 use crate::spider::Spider;
+use crate::CHROME_UA;
 
-const COOKIE: &str = "buvid3=84B0395D-C9F2-C490-E92E-A09AB48FE26E71636infoc";
+const DEFAULT_COOKIE: &str = "buvid3=84B0395D-C9F2-C490-E92E-A09AB48FE26E71636infoc";
 
 pub struct BiliSpider {
     client: reqwest::Client,
@@ -15,11 +16,20 @@ impl BiliSpider {
     pub fn new() -> Self {
         Self {
             client: reqwest::Client::builder()
-                .user_agent("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36")
+                .user_agent(CHROME_UA)
                 .timeout(std::time::Duration::from_secs(10))
                 .build()
                 .expect("Failed to build reqwest client"),
         }
+    }
+
+    fn resolve_cookie(ext: &Option<Value>) -> String {
+        ext.as_ref()
+            .and_then(|v| v.get("cookie"))
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| DEFAULT_COOKIE.to_string())
     }
 }
 
@@ -30,9 +40,10 @@ impl Default for BiliSpider {
 }
 
 impl BiliSpider {
-    fn add_headers(req: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
+    fn add_headers(req: reqwest::RequestBuilder, cookie: &str) -> reqwest::RequestBuilder {
         req.header("Referer", "https://www.bilibili.com")
-            .header("Cookie", COOKIE)
+            .header("Cookie", cookie)
+            .header("User-Agent", CHROME_UA)
     }
 
     fn tid_to_rid(tid: &str) -> &str {
@@ -64,7 +75,8 @@ impl BiliSpider {
 impl Spider for BiliSpider {
     fn name(&self) -> &str { "csp_BiliGuard" }
 
-    async fn home(&self, _site: &Site) -> Result<ApiResult> {
+    async fn home(&self, site: &Site) -> Result<ApiResult> {
+        let cookie = Self::resolve_cookie(&site.ext);
         let classes = vec![
             Class { type_id: "1".into(), type_name: "动画".into(), type_flag: None, filters: None },
             Class { type_id: "2".into(), type_name: "音乐".into(), type_flag: None, filters: None },
@@ -76,7 +88,7 @@ impl Spider for BiliSpider {
             Class { type_id: "8".into(), type_name: "电视剧".into(), type_flag: None, filters: None },
         ];
 
-        let resp = Self::add_headers(self.client.get("https://api.bilibili.com/x/web-interface/popular"))
+        let resp = Self::add_headers(self.client.get("https://api.bilibili.com/x/web-interface/popular"), &cookie)
             .send().await?;
         let body: Value = resp.json().await?;
 
@@ -87,10 +99,11 @@ impl Spider for BiliSpider {
         Ok(ApiResult { class: Some(classes), list: Some(list), ..Default::default() })
     }
 
-    async fn category(&self, _site: &Site, tid: &str, pg: i32, _filters: &[(&str, &str)]) -> Result<ApiResult> {
+    async fn category(&self, site: &Site, tid: &str, pg: i32, _filters: &[(&str, &str)]) -> Result<ApiResult> {
+        let cookie = Self::resolve_cookie(&site.ext);
         let rid = Self::tid_to_rid(tid);
         let url = format!("https://api.bilibili.com/x/web-interface/newlist?rid={}&pn={}", rid, pg);
-        let resp = Self::add_headers(self.client.get(&url))
+        let resp = Self::add_headers(self.client.get(&url), &cookie)
             .send().await?;
         let body: Value = resp.json().await?;
 
@@ -101,10 +114,11 @@ impl Spider for BiliSpider {
         Ok(ApiResult { class: None, list: Some(list), ..Default::default() })
     }
 
-    async fn detail(&self, _site: &Site, ids: &[String]) -> Result<ApiResult> {
+    async fn detail(&self, site: &Site, ids: &[String]) -> Result<ApiResult> {
+        let cookie = Self::resolve_cookie(&site.ext);
         let aid = ids.first().map(|s| s.as_str()).unwrap_or("");
         let url = format!("https://api.bilibili.com/x/web-interface/view?aid={}", aid);
-        let resp = Self::add_headers(self.client.get(&url))
+        let resp = Self::add_headers(self.client.get(&url), &cookie)
             .send().await?;
         let body: Value = resp.json().await?;
         let data = &body["data"];
@@ -123,12 +137,13 @@ impl Spider for BiliSpider {
         Ok(ApiResult { class: None, list: Some(vec![vod]), ..Default::default() })
     }
 
-    async fn play(&self, _site: &Site, _flag: &str, id: &str) -> Result<PlayInfo> {
+    async fn play(&self, site: &Site, _flag: &str, id: &str) -> Result<PlayInfo> {
+        let cookie = Self::resolve_cookie(&site.ext);
         let parts: Vec<&str> = id.split('_').collect();
         let aid = parts.first().unwrap_or(&"");
         let cid = parts.get(1).unwrap_or(&"0");
         let url = format!("https://api.bilibili.com/x/player/playurl?avid={}&cid={}&qn=80", aid, cid);
-        let resp = self.client.get(&url).send().await?;
+        let resp = Self::add_headers(self.client.get(&url), &cookie).send().await?;
         let body: Value = resp.json().await?;
 
         let play_url = body["data"]["durl"][0]["url"]
@@ -140,15 +155,16 @@ impl Spider for BiliSpider {
         Ok(PlayInfo {
             url: play_url,
             headers,
-            user_agent: Some("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36".into()),
+            user_agent: Some(CHROME_UA.into()),
             referer: Some("https://www.bilibili.com".into()),
         })
     }
 
-    async fn search(&self, _site: &Site, keyword: &str, pg: i32) -> Result<ApiResult> {
+    async fn search(&self, site: &Site, keyword: &str, pg: i32) -> Result<ApiResult> {
+        let cookie = Self::resolve_cookie(&site.ext);
         let resp = Self::add_headers(self.client
             .get("https://api.bilibili.com/x/web-interface/search/type")
-            .query(&[("search_type", "video"), ("keyword", keyword), ("page", &pg.to_string())]))
+            .query(&[("search_type", "video"), ("keyword", keyword), ("page", &pg.to_string())]), &cookie)
             .send().await?;
         let text = resp.text().await?;
         let body: Value = serde_json::from_str(&text).map_err(|e| {

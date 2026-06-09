@@ -8,6 +8,7 @@ use rivu_core::models::Vod;
 pub struct SearchScreen {
     pub query: String,
     pub results: Vec<Vod>,
+    pub result_sites: Vec<String>,
     pub selected: usize,
 }
 
@@ -16,6 +17,7 @@ impl SearchScreen {
         Self {
             query: String::new(),
             results: Vec::new(),
+            result_sites: Vec::new(),
             selected: 0,
         }
     }
@@ -33,14 +35,24 @@ impl SearchScreen {
         let items: Vec<ListItem> = self
             .results
             .iter()
-            .map(|v| {
+            .enumerate()
+            .map(|(i, v)| {
                 let remarks = v.vod_remarks.as_deref().unwrap_or("");
+                let site = self.result_sites.get(i).map(|s| s.as_str()).unwrap_or("");
                 ListItem::new(Line::from(vec![
                     Span::raw(v.vod_name.clone()),
                     Span::styled(
                         format!(" [{}]", remarks),
                         Style::default().fg(Color::DarkGray),
                     ),
+                    if site.is_empty() {
+                        Span::raw("")
+                    } else {
+                        Span::styled(
+                            format!(" ({})", site),
+                            Style::default().fg(Color::Green),
+                        )
+                    },
                 ]))
             })
             .collect();
@@ -65,6 +77,7 @@ mod tests {
         let screen = SearchScreen::new();
         assert!(screen.query.is_empty());
         assert!(screen.results.is_empty());
+        assert!(screen.result_sites.is_empty());
         assert_eq!(screen.selected, 0);
     }
 
@@ -76,7 +89,9 @@ mod tests {
             Vod { vod_id: "1".into(), vod_name: "Result A".into(), vod_remarks: Some("HD".into()), ..Default::default() },
             Vod { vod_id: "2".into(), vod_name: "Result B".into(), vod_remarks: Some("4K".into()), ..Default::default() },
         ];
+        screen.result_sites = vec!["SiteA".into(), "SiteB".into()];
         assert_eq!(screen.results.len(), 2);
+        assert_eq!(screen.result_sites.len(), 2);
         assert_eq!(screen.results[0].vod_name, "Result A");
     }
 
