@@ -90,7 +90,7 @@ impl App {
     fn navigate(&mut self, delta: i32) {
         let len = self.home.sites.len() as i32;
         if len > 0 {
-            self.home.selected = ((self.home.selected as i32 + delta).rem_euclid(len)) as usize;
+            self.home.site_selected = ((self.home.site_selected as i32 + delta).rem_euclid(len)) as usize;
         }
     }
 }
