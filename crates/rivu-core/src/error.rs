@@ -8,6 +8,9 @@ pub enum CoreError {
     #[error("JSON parse error: {0}")]
     Json(#[from] serde_json::Error),
 
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
+
     #[error("Config parse error: {0}")]
     Config(String),
 
