@@ -66,6 +66,16 @@ impl App {
             Some(s) => s,
             None => return,
         };
+        if site.site_type == 3 {
+            self.home.loading = false;
+            self.home.error = Some(format!("Spider plugin (type=3) not yet supported: {}", site.name));
+            return;
+        }
+        if site.api.is_empty() {
+            self.home.loading = false;
+            self.home.error = Some("Site has no API URL".into());
+            return;
+        }
         let result = RT.block_on(self.api.home(&site));
         match result {
             Ok(api_result) => {
@@ -75,7 +85,7 @@ impl App {
             }
             Err(e) => {
                 self.home.loading = false;
-                self.home.error = Some(e.to_string());
+                self.home.error = Some(format!("API error: {}", e));
             }
         }
     }
@@ -87,6 +97,11 @@ impl App {
             Some(s) => s,
             None => return,
         };
+        if site.site_type == 3 {
+            self.home.loading = false;
+            self.home.error = Some(format!("Spider plugin (type=3) not yet supported: {}", site.name));
+            return;
+        }
         let tid = match self.home.categories.get(self.home.category_selected) {
             Some(c) => c.type_id.clone(),
             None => return,
@@ -100,7 +115,7 @@ impl App {
             }
             Err(e) => {
                 self.home.loading = false;
-                self.home.error = Some(e.to_string());
+                self.home.error = Some(format!("API error: {}", e));
             }
         }
     }
@@ -110,6 +125,10 @@ impl App {
             Some(s) => s,
             None => return,
         };
+        if site.site_type == 3 {
+            self.home.error = Some(format!("Spider plugin (type=3) not yet supported: {}", site.name));
+            return;
+        }
         let vod = match self.home.vod_list.get(self.home.vod_selected) {
             Some(v) => v.clone(),
             None => return,
@@ -131,7 +150,7 @@ impl App {
                 }
             }
             Err(e) => {
-                self.home.error = Some(e.to_string());
+                self.home.error = Some(format!("API error: {}", e));
             }
         }
     }
@@ -141,6 +160,9 @@ impl App {
             Some(s) => s,
             None => return Ok(()),
         };
+        if site.site_type == 3 {
+            return Ok(());
+        }
         let flag = match self.detail.flags.get(self.detail.selected_flag) {
             Some(f) => f,
             None => return Ok(()),
@@ -317,6 +339,10 @@ impl App {
                         Some(s) => s,
                         None => return Ok(()),
                     };
+                    if site.site_type == 3 {
+                        self.home.error = Some(format!("Spider plugin (type=3) not yet supported: {}", site.name));
+                        return Ok(());
+                    }
                     let vod = match self.search.results.get(self.search.selected) {
                         Some(v) => v.clone(),
                         None => return Ok(()),
@@ -346,6 +372,10 @@ impl App {
                         Some(s) => s,
                         None => return Ok(()),
                     };
+                    if site.site_type == 3 {
+                        self.home.error = Some(format!("Spider plugin (type=3) not yet supported: {}", site.name));
+                        return Ok(());
+                    }
                     let query = self.search.query.clone();
                     if !query.is_empty() {
                         let result = RT.block_on(self.api.search(&site, &query, 1));
