@@ -3,7 +3,7 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem};
 use ratatui::Frame;
-use rivu_core::models::{ApiResult, Class, Site};
+use rivu_core::models::{ApiResult, Site};
 
 pub struct HomeScreen {
     pub sites: Vec<Site>,
@@ -73,6 +73,7 @@ impl Default for HomeScreen {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rivu_core::models::Class;
 
     #[test]
     fn test_home_screen_new_has_no_sites() {
