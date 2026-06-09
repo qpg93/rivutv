@@ -43,6 +43,7 @@ async fn main() -> Result<()> {
                 match loader.fetch_source(&url).await {
                     Ok(config) => {
                         app.set_sites(config.sites.clone());
+                        app.load_home();
                     }
                     Err(e) => {
                         eprintln!("Warning: couldn't load source config: {}", e);
