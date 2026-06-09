@@ -61,7 +61,7 @@ impl Spider for WoGGSpider {
         let (base, path) = Self::extract_cloud_path(&site.ext)
             .ok_or_else(|| CoreError::Spider("WoGGSpider requires ext with Cloud-drive and _source_base".into()))?;
 
-        let url = format!("{}{}", base.trim_end_matches('/'), path);
+        let url = format!("{}{}", base, path);
         let resp = self.client.get(&url).send().await?;
         let text = resp.text().await?;
 

@@ -5,6 +5,8 @@ use rivu_core::models::{ApiResult, Class, PlayInfo, Site, Vod};
 use serde_json::Value;
 use crate::spider::Spider;
 
+const COOKIE: &str = "buvid3=84B0395D-C9F2-C490-E92E-A09AB48FE26E71636infoc";
+
 pub struct BiliSpider {
     client: reqwest::Client,
 }
@@ -28,6 +30,11 @@ impl Default for BiliSpider {
 }
 
 impl BiliSpider {
+    fn add_headers(req: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
+        req.header("Referer", "https://www.bilibili.com")
+            .header("Cookie", COOKIE)
+    }
+
     fn tid_to_rid(tid: &str) -> &str {
         match tid {
             "1" => "1",   "2" => "3",   "3" => "4",
@@ -69,8 +76,7 @@ impl Spider for BiliSpider {
             Class { type_id: "8".into(), type_name: "电视剧".into(), type_flag: None, filters: None },
         ];
 
-        let resp = self.client.get("https://api.bilibili.com/x/web-interface/popular")
-            .header("Referer", "https://www.bilibili.com")
+        let resp = Self::add_headers(self.client.get("https://api.bilibili.com/x/web-interface/popular"))
             .send().await?;
         let body: Value = resp.json().await?;
 
@@ -84,8 +90,7 @@ impl Spider for BiliSpider {
     async fn category(&self, _site: &Site, tid: &str, pg: i32, _filters: &[(&str, &str)]) -> Result<ApiResult> {
         let rid = Self::tid_to_rid(tid);
         let url = format!("https://api.bilibili.com/x/web-interface/newlist?rid={}&pn={}", rid, pg);
-        let resp = self.client.get(&url)
-            .header("Referer", "https://www.bilibili.com")
+        let resp = Self::add_headers(self.client.get(&url))
             .send().await?;
         let body: Value = resp.json().await?;
 
@@ -99,8 +104,7 @@ impl Spider for BiliSpider {
     async fn detail(&self, _site: &Site, ids: &[String]) -> Result<ApiResult> {
         let aid = ids.first().map(|s| s.as_str()).unwrap_or("");
         let url = format!("https://api.bilibili.com/x/web-interface/view?aid={}", aid);
-        let resp = self.client.get(&url)
-            .header("Referer", "https://www.bilibili.com")
+        let resp = Self::add_headers(self.client.get(&url))
             .send().await?;
         let body: Value = resp.json().await?;
         let data = &body["data"];
@@ -142,14 +146,16 @@ impl Spider for BiliSpider {
     }
 
     async fn search(&self, _site: &Site, keyword: &str, pg: i32) -> Result<ApiResult> {
-        let resp = self.client
-            .get("https://api.bilibili.com/x/web-interface/search/all/v2")
-            .header("Referer", "https://www.bilibili.com")
-            .query(&[("keyword", keyword), ("page", &pg.to_string())])
+        let resp = Self::add_headers(self.client
+            .get("https://api.bilibili.com/x/web-interface/search/type")
+            .query(&[("search_type", "video"), ("keyword", keyword), ("page", &pg.to_string())]))
             .send().await?;
-        let body: Value = resp.json().await?;
+        let text = resp.text().await?;
+        let body: Value = serde_json::from_str(&text).map_err(|e| {
+            rivu_core::error::CoreError::Spider(format!("Bili search JSON parse error: {} — response: {}", e, text.chars().take(200).collect::<String>()))
+        })?;
 
-        let list: Vec<Vod> = body["data"]["result"][0]["data"].as_array()
+        let list: Vec<Vod> = body["data"]["result"].as_array()
             .map(|arr| arr.iter().map(|item| Vod {
                 vod_id: item["aid"].as_i64().unwrap_or(0).to_string(),
                 vod_name: item["title"].as_str().unwrap_or("").to_string(),

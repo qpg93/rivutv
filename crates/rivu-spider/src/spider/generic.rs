@@ -51,7 +51,7 @@ impl GenericSpider {
             None => return Ok(ApiResult::default()),
         };
 
-        let url = format!("{}{}", base.trim_end_matches('/'), path);
+        let url = format!("{}{}", base, path);
         let resp = self.client.get(&url).send().await?;
         let text = resp.text().await?;
 
