@@ -6,6 +6,8 @@ use ratatui::Terminal;
 
 use rivu_core::error::Result;
 use rivu_core::models::{Flag, Site};
+#[cfg(test)]
+use rivu_core::models::Vod;
 use rivu_player::MpvBackend;
 use rivu_spider::extractor::SourceExtractor;
 use rivu_spider::site_api::SiteApi;
