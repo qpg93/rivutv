@@ -1,5 +1,6 @@
 pub mod bili;
 pub mod ygp;
+pub mod wogg;
 
 use std::collections::HashMap;
 use async_trait::async_trait;
@@ -44,6 +45,7 @@ impl SpiderRegistry {
     pub fn register_builtin(&mut self) {
         self.register(Box::new(bili::BiliSpider::new()));
         self.register(Box::new(ygp::YGPSpider::new()));
+        self.register(Box::new(wogg::WoGGSpider::new()));
     }
 }
 
