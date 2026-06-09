@@ -1,7 +1,7 @@
 use rivu_core::error::{CoreError, Result};
 use rivu_core::models::{ApiResult, PlayInfo, Site};
 use crate::site_api::SiteApi;
-use crate::spider::SpiderRegistry;
+use crate::spider::{Spider, SpiderRegistry};
 
 #[cfg(test)]
 use std::collections::HashMap;
@@ -9,8 +9,6 @@ use std::collections::HashMap;
 use async_trait::async_trait;
 #[cfg(test)]
 use rivu_core::models::{Class, Vod};
-#[cfg(test)]
-use crate::spider::Spider;
 
 pub struct SpiderEngine {
     client: reqwest::Client,

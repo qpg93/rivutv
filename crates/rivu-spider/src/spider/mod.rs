@@ -1,3 +1,5 @@
+pub mod bili;
+
 use std::collections::HashMap;
 use async_trait::async_trait;
 use rivu_core::error::Result;
@@ -36,6 +38,10 @@ impl SpiderRegistry {
 
     pub fn names(&self) -> Vec<String> {
         self.spiders.keys().cloned().collect()
+    }
+
+    pub fn register_builtin(&mut self) {
+        self.register(Box::new(bili::BiliSpider::new()));
     }
 }
 
