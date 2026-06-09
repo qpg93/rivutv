@@ -2,7 +2,14 @@
 name = "rivu-ui"
 version = "0.1.0"
 edition = "2021"
-description = "RivuTV user interface (TUI/GUI)"
+description = "RivuTV user interface (TUI)"
 
 [dependencies]
 rivu-core = { path = "../rivu-core" }
+rivu-config = { path = "../rivu-config" }
+rivu-spider = { path = "../rivu-spider" }
+rivu-player = { path = "../rivu-player" }
+ratatui = "0.29"
+crossterm = "0.28"
+tokio = { version = "1", features = ["full"] }
+thiserror = "2"
