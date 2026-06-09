@@ -1,6 +1,27 @@
 /target
 Cargo.lock
+
+# Editor files
 *.swp
 *.swo
 *~
 .DS_Store
+
+# User configuration (sensitive source URLs, API keys)
+sources.toml
+sources.json
+.rivutv/
+.rivuconfig*
+
+# Local user config directory containing source URLs
+config.json
+local_config/
+
+# IDE files
+.idea/
+.vscode/
+*.iml
+
+# OS artifacts
+Thumbs.db
+*.log
