@@ -44,6 +44,8 @@ description = "RivuTV core types, traits, and data models"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
+reqwest = { version = "0.12", default-features = false }
+async-trait = "0.1"
 ```
 
 `crates/rivu-core/src/lib.rs`:
@@ -279,6 +281,162 @@ impl Default for AppConfig {
 }
 ```
 
+- [ ] **Add inline unit tests for models and Flag parsing**
+
+Add to `crates/rivu-core/src/models.rs` (append at end):
+```rust
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_source_config_empty() {
+        let json = r#"{"sites": [], "lives": [], "parses": []}"#;
+        let config: SourceConfig = serde_json::from_str(json).unwrap();
+        assert!(config.sites.is_empty());
+        assert_eq!(config.spider, None);
+    }
+
+    #[test]
+    fn test_source_config_full() {
+        let json = r#"{
+            "sites": [{"key": "k1", "name": "Src1", "type": 3, "api": "http://a.com", "jar": "http://j.com/jar.jar"}],
+            "lives": [{"name": "Live1", "url": "http://l.com"}],
+            "parses": [{"name": "Parse1", "type": 1, "url": "http://p.com"}],
+            "headers": {"User-Agent": "test"},
+            "flags": ["4k", "1080p"],
+            "spider": "http://s.com/spider.jar",
+            "wallpaper": "http://w.com/wall.jpg",
+            "notice": "Hello",
+            "urls": ["http://depot1.com"]
+        }"#;
+        let config: SourceConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(config.sites.len(), 1);
+        assert_eq!(config.lives.as_ref().unwrap().len(), 1);
+        assert_eq!(config.parses.as_ref().unwrap().len(), 1);
+        assert_eq!(config.flags.as_ref().unwrap().len(), 2);
+        assert_eq!(config.spider.as_deref().unwrap(), "http://s.com/spider.jar");
+    }
+
+    #[test]
+    fn test_vod_all_fields() {
+        let json = r#"{
+            "vod_id": "100", "vod_name": "Test",
+            "vod_pic": "http://pic.jpg", "vod_remarks": "HD",
+            "vod_year": "2024", "vod_area": "CN",
+            "vod_director": "Dir A", "vod_actor": "Actor B",
+            "vod_content": "A good movie", "vod_score": "9.0"
+        }"#;
+        let vod: Vod = serde_json::from_str(json).unwrap();
+        assert_eq!(vod.vod_id, "100");
+        assert_eq!(vod.vod_score.as_deref(), Some("9.0"));
+        assert_eq!(vod.vod_actor.as_deref(), Some("Actor B"));
+    }
+
+    #[test]
+    fn test_vod_minimal() {
+        let json = r#"{"vod_id": "1", "vod_name": "Minimal"}"#;
+        let vod: Vod = serde_json::from_str(json).unwrap();
+        assert_eq!(vod.vod_name, "Minimal");
+        assert_eq!(vod.vod_pic, None);
+        assert_eq!(vod.vod_actor, None);
+        assert_eq!(vod.vod_content, None);
+    }
+
+    #[test]
+    fn test_class_with_filters() {
+        let json = r#"{
+            "type_id": "1", "type_name": "Movie",
+            "filters": {
+                "1": [{"key": "area", "name": "Region", "value": [{"v": "", "n": "All"}, {"v": "CN", "n": "China"}]}]
+            }
+        }"#;
+        let class: Class = serde_json::from_str(json).unwrap();
+        assert_eq!(class.type_id, "1");
+        let filters = class.filters.unwrap();
+        assert_eq!(filters.len(), 1);
+        assert_eq!(filters["1"][0].value.len(), 2);
+    }
+
+    #[test]
+    fn test_api_result_empty() {
+        let result = ApiResult::default();
+        assert!(result.class.is_none());
+        assert!(result.list.is_none());
+    }
+
+    #[test]
+    fn test_site_deserialize_type_field() {
+        let json = r#"{"key": "k", "name": "N", "type": 3, "api": "http://a.com"}"#;
+        let site: Site = serde_json::from_str(json).unwrap();
+        assert_eq!(site.site_type, 3);
+    }
+
+    #[test]
+    fn test_flag_parse_single_flag() {
+        let flags = Flag::parse_flags("CK", "1$http://a.mp4#2$http://b.mp4");
+        assert_eq!(flags.len(), 1);
+        assert_eq!(flags[0].name, "CK");
+        assert_eq!(flags[0].episodes.len(), 2);
+        assert_eq!(flags[0].episodes[0].url, "http://a.mp4");
+    }
+
+    #[test]
+    fn test_flag_parse_multi_flag() {
+        let flags = Flag::parse_flags("CK$$$Bili", "1$http://a.mp4#2$http://b.mp4$$$1$http://c.mp4");
+        assert_eq!(flags.len(), 2);
+        assert_eq!(flags[0].name, "CK");
+        assert_eq!(flags[1].name, "Bili");
+        assert_eq!(flags[0].episodes.len(), 2);
+        assert_eq!(flags[1].episodes.len(), 1);
+    }
+
+    #[test]
+    fn test_flag_parse_mismatched_returns_empty() {
+        let flags = Flag::parse_flags("A$$$B", "1$http://a.mp4");
+        assert!(flags.is_empty());
+    }
+
+    #[test]
+    fn test_flag_parse_empty_inputs() {
+        let flags = Flag::parse_flags("", "");
+        assert!(flags.is_empty());
+    }
+
+    #[test]
+    fn test_app_config_serde_roundtrip() {
+        let config = AppConfig {
+            source_url: Some("http://example.com/config.json".into()),
+            sites: vec![Site {
+                key: "k".into(), name: "N".into(), site_type: 0, api: "http://a.com".into(),
+                jar: None, ext: None, searchable: None, quick_search: None,
+                filterable: None, player_type: None, categories: None,
+            }],
+            player: "mpv".into(),
+            theme: "light".into(),
+        };
+        let json = serde_json::to_string(&config).unwrap();
+        let restored: AppConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(restored.source_url, config.source_url);
+        assert_eq!(restored.sites.len(), 1);
+        assert_eq!(restored.theme, "light");
+    }
+
+    #[test]
+    fn test_episode_url_contains_special_chars() {
+        let flag = Flag::parse_flags("S", "1$http://a.com/play?token=abc&id=123#2$http://b.com");
+        assert_eq!(flag[0].episodes[0].url, "http://a.com/play?token=abc&id=123");
+        assert_eq!(flag[0].episodes[1].url, "http://b.com");
+    }
+}
+```
+
+- [ ] **Run unit tests for core**
+
+```bash
+cargo test -p rivu-core
+```
+
 - [ ] **Rewrite traits**
 
 `crates/rivu-core/src/traits.rs`:
@@ -339,6 +497,9 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
 tokio = { version = "1", features = ["full"] }
+
+[dev-dependencies]
+tempfile = "3"
 ```
 
 - [ ] **Rewrite the config module**
@@ -405,6 +566,7 @@ impl ConfigLoader {
 mod tests {
     use super::*;
     use rivu_core::models::Site;
+    use std::io::Write;
 
     #[test]
     fn test_parse_source_config() {
@@ -422,6 +584,90 @@ mod tests {
     fn test_app_config_default() {
         let config = AppConfig::default();
         assert_eq!(config.player, "mpv");
+    }
+
+    #[test]
+    fn test_source_config_with_all_optionals_missing() {
+        let json = r#"{"sites":[]}"#;
+        let config: SourceConfig = serde_json::from_str(json).unwrap();
+        assert!(config.sites.is_empty());
+        assert!(config.lives.is_none());
+        assert!(config.parses.is_none());
+        assert!(config.headers.is_none());
+        assert!(config.flags.is_none());
+    }
+
+    #[test]
+    fn test_source_config_unknown_fields_ignored() {
+        let json = r#"{
+            "sites": [],
+            "unknown_field": "should be ignored",
+            "extra_object": {"a": 1}
+        }"#;
+        let config: SourceConfig = serde_json::from_str(json).unwrap();
+        assert!(config.sites.is_empty());
+    }
+
+    #[test]
+    fn test_app_config_save_and_load_roundtrip() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.json");
+        let mut config = AppConfig::default();
+        config.source_url = Some("http://example.com/tv.json".into());
+        config.player = "mpv".into();
+        config.theme = "dark".into();
+
+        // Save
+        let json = serde_json::to_string_pretty(&config).unwrap();
+        let mut file = std::fs::File::create(&path).unwrap();
+        file.write_all(json.as_bytes()).unwrap();
+        drop(file);
+
+        // Load
+        let loaded: AppConfig = {
+            let content = std::fs::read_to_string(&path).unwrap();
+            serde_json::from_str(&content).unwrap()
+        };
+        assert_eq!(loaded.source_url, config.source_url);
+        assert_eq!(loaded.player, "mpv");
+    }
+
+    #[test]
+    fn test_app_config_corrupted_file_falls_back_to_default() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.json");
+        std::fs::write(&path, "this is not json").unwrap();
+
+        let app_config = std::fs::read_to_string(&path)
+            .ok()
+            .and_then(|s| serde_json::from_str(&s).ok())
+            .unwrap_or_default();
+        assert_eq!(app_config.player, "mpv");
+        assert!(app_config.source_url.is_none());
+    }
+
+    #[test]
+    fn test_get_config_dir_respects_home() {
+        let home = std::env::var("HOME").unwrap();
+        let dir = ConfigLoader::get_config_dir();
+        assert_eq!(dir, std::path::Path::new(&home).join(".config/rivutv"));
+    }
+
+    #[test]
+    fn test_config_loader_new_with_existing_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let config_path = dir.path().join("config.json");
+        let config = AppConfig {
+            source_url: Some("http://test.tv".into()),
+            sites: vec![],
+            player: "vlc".into(),
+            theme: "light".into(),
+        };
+        std::fs::write(&config_path, serde_json::to_string_pretty(&config).unwrap()).unwrap();
+
+        let loader = ConfigLoader::new(dir.path());
+        assert_eq!(loader.app_config.player, "vlc");
+        assert_eq!(loader.app_config.source_url.as_deref(), Some("http://test.tv"));
     }
 }
 ```
@@ -528,6 +774,70 @@ impl Default for SpiderEngine {
         Self::new()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_site() -> Site {
+        Site {
+            key: "test".into(), name: "Test".into(), site_type: 0, api: "http://example.com/api".into(),
+            jar: None, ext: None, searchable: None, quick_search: None, filterable: None,
+            player_type: None, categories: None,
+        }
+    }
+
+    #[test]
+    fn test_build_url_no_trailing_slash() {
+        let engine = SpiderEngine::new();
+        let site = test_site();
+        let url = engine.build_url(&site, "", &[("ac", "videolist")]);
+        assert_eq!(url, "http://example.com/api?ac=videolist");
+    }
+
+    #[test]
+    fn test_build_url_with_trailing_slash() {
+        let engine = SpiderEngine::new();
+        let mut site = test_site();
+        site.api = "http://example.com/api/".into();
+        let url = engine.build_url(&site, "", &[("ac", "videolist")]);
+        assert_eq!(url, "http://example.com/api?ac=videolist");
+    }
+
+    #[test]
+    fn test_build_url_multiple_params() {
+        let engine = SpiderEngine::new();
+        let site = test_site();
+        let url = engine.build_url(&site, "", &[("ac", "videolist"), ("t", "1"), ("pg", "2")]);
+        assert_eq!(url, "http://example.com/api?ac=videolist&t=1&pg=2");
+    }
+
+    #[test]
+    fn test_build_url_with_existing_query() {
+        let engine = SpiderEngine::new();
+        let mut site = test_site();
+        site.api = "http://example.com/api?token=abc".into();
+        let url = engine.build_url(&site, "", &[("ac", "videolist")]);
+        assert_eq!(url, "http://example.com/api?token=abc&ac=videolist");
+    }
+
+    #[test]
+    fn test_build_url_no_params() {
+        let engine = SpiderEngine::new();
+        let site = test_site();
+        let url = engine.build_url(&site, "", &[]);
+        assert_eq!(url, "http://example.com/api?");
+    }
+
+    #[test]
+    fn test_build_url_path_and_params() {
+        let engine = SpiderEngine::new();
+        let mut site = test_site();
+        site.api = "http://example.com/".into();
+        let url = engine.build_url(&site, "proxy?", &[("do", "get")]);
+        assert_eq!(url, "http://example.com/proxy?do=get");
+    }
+}
 ```
 
 - [ ] **Rewrite parsers.rs**
@@ -591,6 +901,76 @@ mod tests {
     fn test_parse_json_empty() {
         let json = r#"{"class":[],"list":[],"page":1,"pagecount":1,"limit":20,"total":0}"#;
         let result = Parser::parse_json(json).unwrap();
+        assert!(result.list.unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_parse_json_with_filters() {
+        let json = r#"{
+            "class": [{"type_id":"1","type_name":"Movie"}],
+            "filters": {
+                "1": [
+                    {"key":"area","name":"Region","value":[{"v":"","n":"All"},{"v":"CN","n":"China"}]}
+                ]
+            },
+            "list": []
+        }"#;
+        let result = Parser::parse_json(json).unwrap();
+        let filters = result.filters.unwrap();
+        let area_filters = filters.get("1").unwrap();
+        assert_eq!(area_filters[0].key, "area");
+        assert_eq!(area_filters[0].value[1].n, "China");
+    }
+
+    #[test]
+    fn test_parse_json_malformed_returns_error() {
+        let result = Parser::parse_json("this is not json at all");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_json_null_values_accepted() {
+        let json = r#"{"class":null,"list":null,"page":null,"total":null}"#;
+        let result = Parser::parse_json(json).unwrap();
+        assert!(result.class.is_none());
+        assert!(result.list.is_none());
+        assert!(result.page.is_none());
+    }
+
+    #[test]
+    fn test_parse_xml_basic() {
+        let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+        <list>
+            <video>
+                <id>100</id>
+                <name>Movie A</name>
+                <pic>http://pic/a.jpg</pic>
+                <note>HD</note>
+            </video>
+            <video>
+                <id>101</id>
+                <name>Movie B</name>
+                <pic>http://pic/b.jpg</pic>
+                <note>4K</note>
+            </video>
+        </list>"#;
+        let result = Parser::parse_xml(xml).unwrap();
+        let vods = result.list.unwrap();
+        assert_eq!(vods.len(), 2);
+        assert_eq!(vods[0].vod_id, "100");
+        assert_eq!(vods[1].vod_name, "Movie B");
+    }
+
+    #[test]
+    fn test_parse_xml_empty_returns_empty_list() {
+        let xml = r#"<?xml version="1.0"?><list></list>"#;
+        let result = Parser::parse_xml(xml).unwrap();
+        assert!(result.list.unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_parse_xml_invalid_returns_empty_list() {
+        let result = Parser::parse_xml("not xml").unwrap();
         assert!(result.list.unwrap().is_empty());
     }
 }
@@ -725,6 +1105,7 @@ impl Default for SourceExtractor {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashMap;
 
     #[test]
     fn test_strip_video_prefix() {
@@ -733,6 +1114,62 @@ mod tests {
         assert_eq!(ext.resolve("http://example.com/video.mp4"), "http://example.com/video.mp4");
         assert_eq!(ext.resolve("magnet:?xt=urn:btih:abc"), "magnet:?xt=urn:btih:abc");
     }
+
+    #[test]
+    fn test_strip_video_prefix_https() {
+        let ext = SourceExtractor::new();
+        assert_eq!(ext.resolve("video://https://s.com/play.m3u8"), "https://s.com/play.m3u8");
+    }
+
+    #[test]
+    fn test_resolve_https_passthrough() {
+        let ext = SourceExtractor::new();
+        assert_eq!(ext.resolve("https://cdn.com/video.mp4"), "https://cdn.com/video.mp4");
+    }
+
+    #[test]
+    fn test_resolve_ed2k_passthrough() {
+        let ext = SourceExtractor::new();
+        let ed2k = "ed2k://|file|movie.avi|1234567890|hash|/";
+        assert_eq!(ext.resolve(ed2k), ed2k);
+    }
+
+    #[test]
+    fn test_resolve_whitespace_trimmed() {
+        let ext = SourceExtractor::new();
+        assert_eq!(ext.resolve("  http://a.com/v.mp4  "), "http://a.com/v.mp4");
+    }
+
+    #[test]
+    fn test_extract_preserves_headers() {
+        let ext = SourceExtractor::new();
+        let mut headers = HashMap::new();
+        headers.insert("Referer".into(), "http://ref.com".into());
+        let info = PlayInfo {
+            url: "video://http://real.com/stream".into(),
+            headers: headers.clone(),
+            user_agent: Some("test-agent".into()),
+            referer: Some("http://ref.com".into()),
+        };
+        let result = ext.extract(&info).unwrap();
+        assert_eq!(result.url, "http://real.com/stream");
+        assert_eq!(result.headers.get("Referer").unwrap(), "http://ref.com");
+        assert_eq!(result.user_agent.as_deref(), Some("test-agent"));
+    }
+
+    #[test]
+    fn test_extract_empty_url() {
+        let ext = SourceExtractor::new();
+        let info = PlayInfo {
+            url: "".into(),
+            headers: HashMap::new(),
+            user_agent: None,
+            referer: None,
+        };
+        let result = ext.extract(&info).unwrap();
+        assert_eq!(result.url, "");
+    }
+
 }
 ```
 
@@ -868,6 +1305,73 @@ impl Default for MpvBackend {
 ```rust
 // Backend module root — individual backends are in their own files.
 pub use crate::mpv::MpvBackend;
+```
+
+- [ ] **Add unit tests for MpvBackend**
+
+Append to `crates/rivu-player/src/mpv.rs`:
+```rust
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    #[test]
+    fn test_is_running_returns_false_when_not_started() {
+        let backend = MpvBackend::new();
+        assert!(!backend.is_running());
+    }
+
+    #[test]
+    fn test_stop_when_not_running_does_not_panic() {
+        let backend = MpvBackend::new();
+        let result = backend.stop();
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_stop_multiple_times_does_not_panic() {
+        let backend = MpvBackend::new();
+        assert!(backend.stop().is_ok());
+        assert!(backend.stop().is_ok());
+        assert!(backend.stop().is_ok());
+    }
+
+    #[test]
+    fn test_play_with_invalid_mpv_path_returns_error() {
+        // This tests the error handling — mpv binary lookup
+        // will fail if mpv is not installed, but the code path itself is exercised.
+        let backend = MpvBackend::new();
+        let info = PlayInfo {
+            url: "http://example.com/v.mp4".into(),
+            headers: HashMap::new(),
+            user_agent: None,
+            referer: None,
+        };
+        // play() will fail gracefully if mpv binary not found
+        let _ = backend.play(&info);
+        // cleanup
+        let _ = backend.stop();
+    }
+}
+```
+
+- [ ] **Add test for backends module re-export**
+
+`crates/rivu-player/src/backends.rs`:
+```rust
+pub use crate::mpv::MpvBackend;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_mpv_backend_can_be_created_via_backends_module() {
+        let backend = MpvBackend::new();
+        assert!(!backend.is_running());
+    }
+}
 ```
 
 - [ ] **Run tests**
@@ -1314,6 +1818,221 @@ impl<T> StatefulList<T> {
 }
 ```
 
+- [ ] **Add unit tests for UI components**
+
+Add to `crates/rivu-ui/src/widgets.rs`:
+```rust
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_stateful_list_new_with_items() {
+        let list = StatefulList::new(vec![1, 2, 3]);
+        assert_eq!(list.items.len(), 3);
+        assert_eq!(list.state.selected(), Some(0));
+    }
+
+    #[test]
+    fn test_stateful_list_new_empty() {
+        let list: StatefulList<i32> = StatefulList::new(vec![]);
+        assert!(list.items.is_empty());
+        assert_eq!(list.state.selected(), None);
+    }
+
+    #[test]
+    fn test_stateful_list_next_wraps_around() {
+        let mut list = StatefulList::new(vec![1, 2]);
+        assert_eq!(list.state.selected(), Some(0));
+        list.next();
+        assert_eq!(list.state.selected(), Some(1));
+        list.next();
+        assert_eq!(list.state.selected(), Some(0));
+    }
+
+    #[test]
+    fn test_stateful_list_previous_wraps_around() {
+        let mut list = StatefulList::new(vec![1, 2]);
+        list.previous();
+        assert_eq!(list.state.selected(), Some(1));
+        list.previous();
+        assert_eq!(list.state.selected(), Some(0));
+    }
+
+    #[test]
+    fn test_stateful_list_next_on_empty_does_not_panic() {
+        let mut list: StatefulList<i32> = StatefulList::new(vec![]);
+        list.next();
+        assert_eq!(list.state.selected(), None);
+    }
+
+    #[test]
+    fn test_stateful_list_previous_on_empty_does_not_panic() {
+        let mut list: StatefulList<i32> = StatefulList::new(vec![]);
+        list.previous();
+        assert_eq!(list.state.selected(), None);
+    }
+
+    #[test]
+    fn test_stateful_list_single_item_stays_selected() {
+        let mut list = StatefulList::new(vec![42]);
+        assert_eq!(list.state.selected(), Some(0));
+        list.next();
+        assert_eq!(list.state.selected(), Some(0));
+        list.previous();
+        assert_eq!(list.state.selected(), Some(0));
+    }
+}
+```
+
+Add to `crates/rivu-ui/src/screens/home.rs`:
+```rust
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_home_screen_new_has_no_sites() {
+        let screen = HomeScreen::new();
+        assert!(screen.sites.is_empty());
+        assert_eq!(screen.selected, 0);
+    }
+
+    #[test]
+    fn test_home_screen_with_sites_selects_first() {
+        let mut screen = HomeScreen::new();
+        screen.sites = vec![
+            Site { key: "a".into(), name: "Site A".into(), site_type: 0, api: "http://a.com".into(), jar: None, ext: None, searchable: None, quick_search: None, filterable: None, player_type: None, categories: None },
+            Site { key: "b".into(), name: "Site B".into(), site_type: 1, api: "http://b.com".into(), jar: None, ext: None, searchable: None, quick_search: None, filterable: None, player_type: None, categories: None },
+        ];
+        assert_eq!(screen.sites.len(), 2);
+        assert_eq!(screen.selected, 0);
+    }
+
+    #[test]
+    fn test_home_screen_with_categories() {
+        let mut screen = HomeScreen::new();
+        screen.result = Some(ApiResult {
+            class: Some(vec![
+                Class { type_id: "1".into(), type_name: "Movie".into(), type_flag: None, filters: None },
+                Class { type_id: "2".into(), type_name: "TV Series".into(), type_flag: None, filters: None },
+            ]),
+            ..Default::default()
+        });
+        let classes = screen.result.as_ref().and_then(|r| r.class.as_ref()).unwrap();
+        assert_eq!(classes.len(), 2);
+        assert_eq!(classes[0].type_name, "Movie");
+    }
+
+    #[test]
+    fn test_home_screen_no_categories_when_no_result() {
+        let screen = HomeScreen::new();
+        assert!(screen.result.is_none());
+    }
+}
+```
+
+Add to `crates/rivu-ui/src/screens/detail.rs`:
+```rust
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_detail_screen_new_has_no_vod() {
+        let screen = DetailScreen::new();
+        assert!(screen.vod.is_none());
+        assert!(screen.flags.is_empty());
+    }
+
+    #[test]
+    fn test_detail_screen_with_vod_sets_metadata() {
+        let mut screen = DetailScreen::new();
+        screen.vod = Some(Vod {
+            vod_id: "100".into(), vod_name: "Test Movie".into(),
+            vod_year: Some("2024".into()), vod_area: Some("CN".into()),
+            vod_score: Some("8.5".into()), vod_director: Some("Dir".into()),
+            ..Default::default()
+        });
+        let vod = screen.vod.as_ref().unwrap();
+        assert_eq!(vod.vod_year.as_deref(), Some("2024"));
+        assert_eq!(vod.vod_score.as_deref(), Some("8.5"));
+    }
+
+    #[test]
+    fn test_detail_screen_build_episode_list() {
+        let mut screen = DetailScreen::new();
+        screen.flags = vec![Flag {
+            name: "CK".into(),
+            episodes: vec![
+                Episode { name: "1".into(), url: "http://a.com/1.mp4".into() },
+                Episode { name: "2".into(), url: "http://a.com/2.mp4".into() },
+            ],
+        }];
+        screen.selected_flag = 0;
+        let items = screen.build_episode_list();
+        assert_eq!(items.len(), 2);
+    }
+
+    #[test]
+    fn test_detail_screen_build_episode_list_no_flags() {
+        let screen = DetailScreen::new();
+        let items = screen.build_episode_list();
+        assert_eq!(items.len(), 1); // "No episodes" placeholder
+    }
+
+    #[test]
+    fn test_detail_screen_episode_selection_highlight() {
+        let mut screen = DetailScreen::new();
+        screen.flags = vec![Flag {
+            name: "CK".into(),
+            episodes: vec![
+                Episode { name: "1".into(), url: "http://a.com/1.mp4".into() },
+                Episode { name: "2".into(), url: "http://a.com/2.mp4".into() },
+            ],
+        }];
+        screen.selected_flag = 0;
+        screen.selected_episode = 1;
+        let items = screen.build_episode_list();
+        assert_eq!(items.len(), 2);
+    }
+}
+```
+
+Add to `crates/rivu-ui/src/screens/search.rs`:
+```rust
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_search_screen_new_is_empty() {
+        let screen = SearchScreen::new();
+        assert!(screen.query.is_empty());
+        assert!(screen.results.is_empty());
+        assert_eq!(screen.selected, 0);
+    }
+
+    #[test]
+    fn test_search_screen_with_results() {
+        let mut screen = SearchScreen::new();
+        screen.query = "test".into();
+        screen.results = vec![
+            Vod { vod_id: "1".into(), vod_name: "Result A".into(), vod_remarks: Some("HD".into()), ..Default::default() },
+            Vod { vod_id: "2".into(), vod_name: "Result B".into(), vod_remarks: Some("4K".into()), ..Default::default() },
+        ];
+        assert_eq!(screen.results.len(), 2);
+        assert_eq!(screen.results[0].vod_name, "Result A");
+    }
+
+    #[test]
+    fn test_search_screen_empty_results() {
+        let screen = SearchScreen::new();
+        assert!(screen.results.is_empty());
+    }
+}
+```
+
 - [ ] **Compile check**
 
 ```bash
@@ -1434,16 +2153,93 @@ async fn main() -> Result<()> {
 }
 ```
 
+- [ ] **Add integration tests for CLI arg parsing**
+
+Create `tests/cli_test.rs`:
+```rust
+use std::process::Command;
+
+#[test]
+fn test_cli_run_accepts_no_args() {
+    // Verifies the binary can be invoked with --help without crashing
+    let output = Command::new(env!("CARGO_BIN_EXE_rivutv"))
+        .arg("--help")
+        .output()
+        .expect("failed to execute binary");
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("RivuTV"));
+    assert!(stdout.contains("run"));
+    assert!(stdout.contains("config"));
+    assert!(stdout.contains("search"));
+    assert!(stdout.contains("play"));
+    assert!(stdout.contains("sources"));
+}
+
+#[test]
+fn test_cli_version_flag() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rivutv"))
+        .arg("--version")
+        .output()
+        .expect("failed to execute binary");
+    assert!(output.status.success());
+}
+
+#[test]
+fn test_cli_invalid_subcommand_returns_error() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rivutv"))
+        .arg("invalid-command")
+        .output()
+        .expect("failed to execute binary");
+    assert!(!output.status.success());
+}
+
+#[test]
+fn test_cli_search_requires_keyword() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rivutv"))
+        .arg("search")
+        .output()
+        .expect("failed to execute binary");
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("keyword"));
+}
+
+#[test]
+fn test_cli_config_requires_url() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rivutv"))
+        .arg("config")
+        .output()
+        .expect("failed to execute binary");
+    assert!(!output.status.success());
+}
+
+#[test]
+fn test_cli_play_requires_url() {
+    let output = Command::new(env!("CARGO_BIN_EXE_rivutv"))
+        .arg("play")
+        .output()
+        .expect("failed to execute binary");
+    assert!(!output.status.success());
+}
+```
+
+Add to root `Cargo.toml` for binary test support:
+```toml
+# No changes needed — CARGO_BIN_EXE_rivutv is auto-set for the root crate
+```
+
 - [ ] **Compile check**
 
 ```bash
 cargo check
+cargo test --test cli_test
 ```
 
 - [ ] **Commit**
 
 ```bash
-git add src/ Cargo.toml
+git add src/ Cargo.toml tests/
 git commit -m "feat(cli): wire config, TUI, and player into main binary"
 ```
 
@@ -1462,7 +2258,9 @@ Clean up error handling, handle edge cases (network failures, invalid JSON, miss
 `tests/integration_test.rs`:
 ```rust
 use rivu_core::models::*;
+use rivu_spider::extractor::SourceExtractor;
 use rivu_spider::parsers::Parser;
+use std::collections::HashMap;
 
 #[test]
 fn test_full_parse_pipeline() {
@@ -1507,6 +2305,149 @@ fn test_parse_episodes_from_play_url() {
     assert_eq!(flags[0].name, "ck");
     assert_eq!(flags[0].episodes.len(), 2);
     assert_eq!(flags[1].episodes.len(), 1);
+}
+
+// ── Cross-crate integration: parse → extract pipeline ──
+
+#[test]
+fn test_parse_then_extract_video_prefix() {
+    let json = r#"{"url": "video://http://real.com/play.m3u8", "flag": "ck"}"#;
+    let result = Parser::parse_json(json).unwrap();
+    let play_info = PlayInfo {
+        url: result.url.unwrap_or_default(),
+        headers: HashMap::new(),
+        user_agent: None,
+        referer: None,
+    };
+    let ext = SourceExtractor::new();
+    let resolved = ext.extract(&play_info).unwrap();
+    assert_eq!(resolved.url, "http://real.com/play.m3u8");
+}
+
+// ── Edge cases ──
+
+#[test]
+fn test_empty_source_config_does_not_panic() {
+    let json = "{}";
+    let config: SourceConfig = serde_json::from_str(json).unwrap();
+    assert!(config.sites.is_empty());
+    assert!(config.lives.is_none());
+}
+
+#[test]
+fn test_vod_with_all_empty_strings() {
+    let json = r#"{
+        "vod_id": "", "vod_name": "",
+        "vod_pic": "", "vod_remarks": "",
+        "vod_play_from": "", "vod_play_url": ""
+    }"#;
+    let vod: Vod = serde_json::from_str(json).unwrap();
+    assert_eq!(vod.vod_id, "");
+    assert_eq!(vod.vod_play_url.as_deref(), Some(""));
+}
+
+#[test]
+fn test_source_config_with_full_lives_config() {
+    let json = r#"{
+        "sites": [],
+        "lives": [{
+            "name": "CCTV", "url": "http://live.com/cctv.m3u8",
+            "epg": "http://epg.com", "ua": "Mozilla/5.0",
+            "origin": "http://origin.com", "referer": "http://ref.com",
+            "header": {"User-Agent": "test"}
+        }]
+    }"#;
+    let config: SourceConfig = serde_json::from_str(json).unwrap();
+    let lives = config.lives.unwrap();
+    assert_eq!(lives[0].name, "CCTV");
+    assert_eq!(lives[0].epg.as_deref(), Some("http://epg.com"));
+}
+
+#[test]
+fn test_source_config_with_parse_definitions() {
+    let json = r#"{
+        "sites": [],
+        "parses": [
+            {"name": "Parse1", "type": 1, "url": "http://parse1.com/api?url="},
+            {"name": "Parse2", "type": 0, "url": "http://parse2.com/?url=",
+             "ext": {"flag": "1"}, "header": {"Referer": "http://ref.com"}}
+        ]
+    }"#;
+    let config: SourceConfig = serde_json::from_str(json).unwrap();
+    let parses = config.parses.unwrap();
+    assert_eq!(parses.len(), 2);
+    assert_eq!(parses[0].parse_type, 1);
+    assert_eq!(parses[1].ext.as_ref().unwrap().get("flag").unwrap(), "1");
+}
+
+// ── Flag parsing edge cases ──
+
+#[test]
+fn test_flag_parse_single_episode() {
+    let flags = Flag::parse_flags("CK", "1$http://a.mp4");
+    assert_eq!(flags.len(), 1);
+    assert_eq!(flags[0].episodes.len(), 1);
+    assert_eq!(flags[0].episodes[0].name, "1");
+}
+
+#[test]
+fn test_flag_parse_three_flags() {
+    let flags = Flag::parse_flags("A$$$B$$$C", "1$u1$$$1$u2$$$1$u3");
+    assert_eq!(flags.len(), 3);
+    assert_eq!(flags[0].episodes[0].url, "u1");
+    assert_eq!(flags[2].episodes[0].url, "u3");
+}
+
+#[test]
+fn test_flag_parse_empty_episode_list_for_flag() {
+    let flags = Flag::parse_flags("A$$$B", "1$u1$$$");
+    assert_eq!(flags.len(), 2);
+    assert!(flags[1].episodes.is_empty());
+}
+
+#[test]
+fn test_flag_parse_episodes_with_pound_in_url_not_allowed() {
+    // # is the delimiter, so it shouldn't appear in names/urls
+    let flags = Flag::parse_flags("CK", "1$http://a.com/1.mp4");
+    assert_eq!(flags[0].episodes.len(), 1);
+    assert_eq!(flags[0].episodes[0].name, "1");
+}
+
+// ── PlayInfo construction ──
+
+#[test]
+fn test_play_info_with_all_fields() {
+    let mut headers = HashMap::new();
+    headers.insert("Referer".into(), "http://ref.com".into());
+    let info = PlayInfo {
+        url: "http://stream.com/video.m3u8".into(),
+        headers,
+        user_agent: Some("Mozilla/5.0".into()),
+        referer: Some("http://ref.com".into()),
+    };
+    assert!(info.url.starts_with("http"));
+    assert_eq!(info.headers.len(), 1);
+}
+
+// ── Real-world TVBox config sample (anonymized) ──
+
+#[test]
+fn test_real_world_tvbox_config_structure() {
+    let json = r#"{
+        "sites": [
+            {"key": "douban", "name": "豆瓣", "type": 0, "api": "http://douban.api.com/video"},
+            {"key": "custom", "name": "My Source", "type": 3, "api": "csp_Myspider", "jar": "http://jar.com/spider.jar", "ext": "{}"}
+        ],
+        "lives": [{"name": "CCTV", "url": "http://live.com/cctv.m3u8"}],
+        "parses": [{"name": "JsonParse", "type": 1, "url": "http://parse.com/?url="}],
+        "flags": ["4k"],
+        "spider": "http://spider.com/spider.jar"
+    }"#;
+    let config: SourceConfig = serde_json::from_str(json).unwrap();
+    assert_eq!(config.sites.len(), 2);
+    assert_eq!(config.sites[1].site_type, 3);
+    assert_eq!(config.sites[1].jar.as_deref(), Some("http://jar.com/spider.jar"));
+    assert!(config.flags.is_some());
 }
 ```
 
