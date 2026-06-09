@@ -29,7 +29,18 @@ impl ConfigLoader {
         let resp = self.client.get(url).send().await?;
         let bytes = resp.bytes().await?;
         let decoded = SourceDecoder::decode(&bytes)?;
-        let config: SourceConfig = serde_json::from_str(&decoded)?;
+        let mut config: SourceConfig = serde_json::from_str(&decoded)?;
+
+        let source_base = url.rsplit_once('/').map(|(base, _)| base.to_string() + "/").unwrap_or_default();
+        for site in &mut config.sites {
+            if site.site_type == 3 {
+                let ext = site.ext.get_or_insert_with(|| serde_json::Value::Object(Default::default()));
+                if let serde_json::Value::Object(ref mut map) = ext {
+                    map.insert("_source_base".into(), serde_json::Value::String(source_base.clone()));
+                }
+            }
+        }
+
         self.source_config = Some(config);
         Ok(self.source_config.as_ref().unwrap())
     }

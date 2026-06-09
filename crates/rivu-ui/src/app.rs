@@ -10,8 +10,10 @@ use rivu_core::models::{Flag, Site};
 #[cfg(test)]
 use rivu_core::models::Vod;
 use rivu_player::MpvBackend;
+use rivu_spider::engine::SpiderApi;
 use rivu_spider::extractor::SourceExtractor;
 use rivu_spider::site_api::SiteApi;
+use rivu_spider::spider::SpiderRegistry;
 
 static RT: LazyLock<tokio::runtime::Runtime> = LazyLock::new(|| {
     tokio::runtime::Runtime::new().expect("Failed to create tokio runtime for API calls")
@@ -29,7 +31,7 @@ pub struct App {
     pub home: HomeScreen,
     pub detail: DetailScreen,
     pub search: SearchScreen,
-    pub api: SiteApi,
+    pub engine: SpiderApi,
     pub player: MpvBackend,
     pub sites: Vec<Site>,
     pub current_site_index: usize,
@@ -38,11 +40,13 @@ pub struct App {
 
 impl App {
     pub fn new() -> Self {
+        let mut registry = SpiderRegistry::new();
+        registry.register_builtin();
         Self {
             home: HomeScreen::new(),
             detail: DetailScreen::new(),
             search: SearchScreen::new(),
-            api: SiteApi::new(),
+            engine: SpiderApi::new(SiteApi::new(), registry),
             player: MpvBackend::new(),
             sites: Vec::new(),
             current_site_index: 0,
@@ -66,17 +70,7 @@ impl App {
             Some(s) => s,
             None => return,
         };
-        if site.site_type == 3 {
-            self.home.loading = false;
-            self.home.error = Some(format!("Spider plugin (type=3) not yet supported: {}", site.name));
-            return;
-        }
-        if site.api.is_empty() {
-            self.home.loading = false;
-            self.home.error = Some("Site has no API URL".into());
-            return;
-        }
-        let result = RT.block_on(self.api.home(&site));
+        let result = RT.block_on(self.engine.home(&site));
         match result {
             Ok(api_result) => {
                 self.home.categories = api_result.class.unwrap_or_default();
@@ -97,16 +91,11 @@ impl App {
             Some(s) => s,
             None => return,
         };
-        if site.site_type == 3 {
-            self.home.loading = false;
-            self.home.error = Some(format!("Spider plugin (type=3) not yet supported: {}", site.name));
-            return;
-        }
         let tid = match self.home.categories.get(self.home.category_selected) {
             Some(c) => c.type_id.clone(),
             None => return,
         };
-        let result = RT.block_on(self.api.category(&site, &tid, 1, &[]));
+        let result = RT.block_on(self.engine.category(&site, &tid, 1, &[]));
         match result {
             Ok(api_result) => {
                 self.home.vod_list = api_result.list.unwrap_or_default();
@@ -125,15 +114,11 @@ impl App {
             Some(s) => s,
             None => return,
         };
-        if site.site_type == 3 {
-            self.home.error = Some(format!("Spider plugin (type=3) not yet supported: {}", site.name));
-            return;
-        }
         let vod = match self.home.vod_list.get(self.home.vod_selected) {
             Some(v) => v.clone(),
             None => return,
         };
-        let result = RT.block_on(self.api.detail(&site, std::slice::from_ref(&vod.vod_id)));
+        let result = RT.block_on(self.engine.detail(&site, std::slice::from_ref(&vod.vod_id)));
         match result {
             Ok(api_result) => {
                 if let Some(list) = api_result.list {
@@ -160,9 +145,6 @@ impl App {
             Some(s) => s,
             None => return Ok(()),
         };
-        if site.site_type == 3 {
-            return Ok(());
-        }
         let flag = match self.detail.flags.get(self.detail.selected_flag) {
             Some(f) => f,
             None => return Ok(()),
@@ -171,7 +153,7 @@ impl App {
             Some(e) => e.clone(),
             None => return Ok(()),
         };
-        let play_info = RT.block_on(self.api.play(&site, &flag.name, &ep.url))?;
+        let play_info = RT.block_on(self.engine.play(&site, &flag.name, &ep.url))?;
         let extractor = SourceExtractor::new();
         let resolved = extractor.extract(&play_info)?;
         self.player.play(&resolved)?;
@@ -339,15 +321,11 @@ impl App {
                         Some(s) => s,
                         None => return Ok(()),
                     };
-                    if site.site_type == 3 {
-                        self.home.error = Some(format!("Spider plugin (type=3) not yet supported: {}", site.name));
-                        return Ok(());
-                    }
                     let vod = match self.search.results.get(self.search.selected) {
                         Some(v) => v.clone(),
                         None => return Ok(()),
                     };
-                    let result = RT.block_on(self.api.detail(&site, std::slice::from_ref(&vod.vod_id)));
+                    let result = RT.block_on(self.engine.detail(&site, std::slice::from_ref(&vod.vod_id)));
                     match result {
                         Ok(api_result) => {
                             if let Some(list) = api_result.list {
@@ -372,13 +350,9 @@ impl App {
                         Some(s) => s,
                         None => return Ok(()),
                     };
-                    if site.site_type == 3 {
-                        self.home.error = Some(format!("Spider plugin (type=3) not yet supported: {}", site.name));
-                        return Ok(());
-                    }
                     let query = self.search.query.clone();
                     if !query.is_empty() {
-                        let result = RT.block_on(self.api.search(&site, &query, 1));
+                        let result = RT.block_on(self.engine.search(&site, &query, 1));
                         match result {
                             Ok(api_result) => {
                                 self.search.results = api_result.list.unwrap_or_default();
