@@ -97,25 +97,33 @@ fn main() -> Result<()> {
             registry.register_builtin();
             let engine = SpiderApi::new(SiteApi::new(), registry);
 
+            eprint!("Searching {} sites for '{}'", config.sites.len(), keyword);
             let mut total = 0;
             for site in &config.sites {
                 let result = rt.block_on(engine.search(site, &keyword, 1));
-                if let Ok(api_result) = result {
-                    if let Some(list) = api_result.list {
-                        if !list.is_empty() {
-                            println!("{} {}:", "─".repeat(4), site.name);
-                            for vod in &list {
-                                if let Some(ref remarks) = vod.vod_remarks {
-                                    println!("  {} [{}]", vod.vod_name, remarks);
-                                } else {
-                                    println!("  {}", vod.vod_name);
+                match result {
+                    Ok(api_result) => {
+                        if let Some(list) = api_result.list {
+                            if !list.is_empty() {
+                                println!("\n{} {}:", "─".repeat(4), site.name);
+                                for vod in &list {
+                                    if let Some(ref remarks) = vod.vod_remarks {
+                                        println!("  {} [{}]", vod.vod_name, remarks);
+                                    } else {
+                                        println!("  {}", vod.vod_name);
+                                    }
                                 }
+                                total += list.len();
                             }
-                            total += list.len();
                         }
+                        eprint!(".");
+                    }
+                    Err(e) => {
+                        eprintln!("\n{} ✗ {}", site.name, e);
                     }
                 }
             }
+            eprintln!();
 
             if total == 0 {
                 println!("No results found for '{}'", keyword);

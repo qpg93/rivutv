@@ -14,6 +14,7 @@ impl BiliSpider {
         Self {
             client: reqwest::Client::builder()
                 .user_agent("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36")
+                .timeout(std::time::Duration::from_secs(10))
                 .build()
                 .expect("Failed to build reqwest client"),
         }
@@ -69,6 +70,7 @@ impl Spider for BiliSpider {
         ];
 
         let resp = self.client.get("https://api.bilibili.com/x/web-interface/popular")
+            .header("Referer", "https://www.bilibili.com")
             .send().await?;
         let body: Value = resp.json().await?;
 
@@ -82,7 +84,9 @@ impl Spider for BiliSpider {
     async fn category(&self, _site: &Site, tid: &str, pg: i32, _filters: &[(&str, &str)]) -> Result<ApiResult> {
         let rid = Self::tid_to_rid(tid);
         let url = format!("https://api.bilibili.com/x/web-interface/newlist?rid={}&pn={}", rid, pg);
-        let resp = self.client.get(&url).send().await?;
+        let resp = self.client.get(&url)
+            .header("Referer", "https://www.bilibili.com")
+            .send().await?;
         let body: Value = resp.json().await?;
 
         let list: Vec<Vod> = body["data"]["archives"].as_array()
@@ -95,7 +99,9 @@ impl Spider for BiliSpider {
     async fn detail(&self, _site: &Site, ids: &[String]) -> Result<ApiResult> {
         let aid = ids.first().map(|s| s.as_str()).unwrap_or("");
         let url = format!("https://api.bilibili.com/x/web-interface/view?aid={}", aid);
-        let resp = self.client.get(&url).send().await?;
+        let resp = self.client.get(&url)
+            .header("Referer", "https://www.bilibili.com")
+            .send().await?;
         let body: Value = resp.json().await?;
         let data = &body["data"];
 
@@ -138,6 +144,7 @@ impl Spider for BiliSpider {
     async fn search(&self, _site: &Site, keyword: &str, pg: i32) -> Result<ApiResult> {
         let resp = self.client
             .get("https://api.bilibili.com/x/web-interface/search/all/v2")
+            .header("Referer", "https://www.bilibili.com")
             .query(&[("keyword", keyword), ("page", &pg.to_string())])
             .send().await?;
         let body: Value = resp.json().await?;
