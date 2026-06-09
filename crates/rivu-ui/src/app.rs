@@ -5,7 +5,7 @@ use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
 
 use rivu_core::error::Result;
-use rivu_core::models::{Flag, Site};
+use rivu_core::models::{Flag, Site, Vod};
 use rivu_player::MpvBackend;
 use rivu_spider::extractor::SourceExtractor;
 use rivu_spider::site_api::SiteApi;
@@ -385,5 +385,162 @@ impl App {
 impl Default for App {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_app_new_has_no_sites() {
+        let app = App::new();
+        assert!(app.sites.is_empty());
+        assert!(app.home.sites.is_empty());
+    }
+
+    #[test]
+    fn test_app_set_sites_updates_both() {
+        let mut app = App::new();
+        let sites = vec![
+            Site { key: "a".into(), name: "A".into(), site_type: 0, api: "http://a.com".into(), ..Default::default() },
+        ];
+        app.set_sites(sites);
+        assert_eq!(app.sites.len(), 1);
+        assert_eq!(app.home.sites.len(), 1);
+    }
+
+    #[test]
+    fn test_app_current_site_returns_none_when_empty() {
+        let app = App::new();
+        assert!(app.current_site().is_none());
+    }
+
+    #[test]
+    fn test_app_current_site_returns_selected() {
+        let mut app = App::new();
+        app.sites = vec![
+            Site { key: "a".into(), name: "A".into(), site_type: 0, api: "http://a.com".into(), ..Default::default() },
+            Site { key: "b".into(), name: "B".into(), site_type: 1, api: "http://b.com".into(), ..Default::default() },
+        ];
+        app.current_site_index = 1;
+        assert_eq!(app.current_site().unwrap().key, "b");
+    }
+
+    #[test]
+    fn test_navigate_wrap_basic() {
+        let app = App::new();
+        assert_eq!(app.navigate_wrap(0, 1, 3), 1);
+        assert_eq!(app.navigate_wrap(2, 1, 3), 0);
+        assert_eq!(app.navigate_wrap(0, -1, 3), 2);
+    }
+
+    #[test]
+    fn test_navigate_wrap_empty() {
+        let app = App::new();
+        assert_eq!(app.navigate_wrap(0, 1, 0), 0);
+    }
+
+    #[test]
+    fn test_home_keys_move_selection() {
+        let mut app = App::new();
+        app.home.sites = vec![
+            Site { key: "a".into(), name: "A".into(), site_type: 0, api: "http://a.com".into(), ..Default::default() },
+            Site { key: "b".into(), name: "B".into(), site_type: 1, api: "http://b.com".into(), ..Default::default() },
+            Site { key: "c".into(), name: "C".into(), site_type: 2, api: "http://c.com".into(), ..Default::default() },
+        ];
+        app.home.focus = 0;
+        app.handle_home_key(KeyCode::Char('j')).unwrap();
+        assert_eq!(app.home.site_selected, 1);
+        app.handle_home_key(KeyCode::Char('j')).unwrap();
+        assert_eq!(app.home.site_selected, 2);
+        app.handle_home_key(KeyCode::Char('k')).unwrap();
+        assert_eq!(app.home.site_selected, 1);
+    }
+
+    #[test]
+    fn test_home_focus_switching() {
+        let mut app = App::new();
+        app.home.focus = 0;
+        app.handle_home_key(KeyCode::Right).unwrap();
+        assert_eq!(app.home.focus, 1);
+        app.handle_home_key(KeyCode::Right).unwrap();
+        assert_eq!(app.home.focus, 2);
+        app.handle_home_key(KeyCode::Right).unwrap();
+        assert_eq!(app.home.focus, 2);
+        app.handle_home_key(KeyCode::Left).unwrap();
+        assert_eq!(app.home.focus, 1);
+    }
+
+    #[test]
+    fn test_detail_keys_cycle_episodes() {
+        let mut app = App::new();
+        app.detail.flags = vec![Flag {
+            name: "CK".into(),
+            episodes: vec![
+                rivu_core::models::Episode { name: "1".into(), url: "u1".into() },
+                rivu_core::models::Episode { name: "2".into(), url: "u2".into() },
+            ],
+        }];
+        assert_eq!(app.detail.selected_episode, 0);
+        app.handle_detail_key(KeyCode::Char('j')).unwrap();
+        assert_eq!(app.detail.selected_episode, 1);
+        app.handle_detail_key(KeyCode::Char('k')).unwrap();
+        assert_eq!(app.detail.selected_episode, 0);
+    }
+
+    #[test]
+    fn test_detail_esc_clears_and_goes_home() {
+        let mut app = App::new();
+        app.detail.vod = Some(Vod { vod_id: "1".into(), vod_name: "T".into(), ..Default::default() });
+        app.detail.flags = vec![Flag {
+            name: "CK".into(),
+            episodes: vec![rivu_core::models::Episode { name: "1".into(), url: "u1".into() }],
+        }];
+        app.handle_detail_key(KeyCode::Esc).unwrap();
+        assert!(app.detail.vod.is_none());
+        assert!(app.detail.flags.is_empty());
+    }
+
+    #[test]
+    fn test_search_key_accepts_input() {
+        let mut app = App::new();
+        app.handle_search_key(KeyCode::Char('t')).unwrap();
+        app.handle_search_key(KeyCode::Char('e')).unwrap();
+        app.handle_search_key(KeyCode::Char('s')).unwrap();
+        app.handle_search_key(KeyCode::Char('t')).unwrap();
+        assert_eq!(app.search.query, "test");
+    }
+
+    #[test]
+    fn test_search_backspace() {
+        let mut app = App::new();
+        app.search.query = "test".into();
+        app.handle_search_key(KeyCode::Backspace).unwrap();
+        assert_eq!(app.search.query, "tes");
+    }
+
+    #[test]
+    fn test_search_esc_clears_and_goes_home() {
+        let mut app = App::new();
+        app.search.query = "hello".into();
+        app.handle_search_key(KeyCode::Esc).unwrap();
+        assert!(app.search.query.is_empty());
+    }
+
+    #[test]
+    fn test_detail_flag_switching_with_keys() {
+        let mut app = App::new();
+        app.detail.flags = vec![
+            Flag { name: "CK".into(), episodes: vec![] },
+            Flag { name: "Bili".into(), episodes: vec![] },
+            Flag { name: "QQ".into(), episodes: vec![] },
+        ];
+        app.handle_detail_key(KeyCode::Right).unwrap();
+        assert_eq!(app.detail.selected_flag, 1);
+        app.handle_detail_key(KeyCode::Right).unwrap();
+        assert_eq!(app.detail.selected_flag, 2);
+        app.handle_detail_key(KeyCode::Left).unwrap();
+        assert_eq!(app.detail.selected_flag, 1);
     }
 }
