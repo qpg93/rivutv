@@ -25,7 +25,7 @@ impl DetailScreen {
     pub fn draw(&self, frame: &mut Frame, area: Rect) {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([Constraint::Length(6), Constraint::Min(1)])
+            .constraints([Constraint::Length(6), Constraint::Length(3), Constraint::Min(1)])
             .split(area);
 
         if let Some(vod) = &self.vod {
@@ -48,12 +48,37 @@ impl DetailScreen {
             let info_widget =
                 Paragraph::new(info).block(Block::default().borders(Borders::ALL)).wrap(Wrap { trim: false });
             frame.render_widget(info_widget, chunks[0]);
-
-            let episodes = self.build_episode_list();
-            let ep_list = List::new(episodes)
-                .block(Block::default().title(" Episodes ").borders(Borders::ALL));
-            frame.render_widget(ep_list, chunks[1]);
         }
+
+        let tabs_content = if !self.flags.is_empty() {
+            Text::from(self.build_flag_tabs())
+        } else {
+            Text::from(Line::from(Span::raw("No sources")))
+        };
+        let tabs_widget = Paragraph::new(tabs_content)
+            .block(Block::default().title(" Sources ").borders(Borders::ALL));
+        frame.render_widget(tabs_widget, chunks[1]);
+
+        let episodes = self.build_episode_list();
+        let ep_list = List::new(episodes)
+            .block(Block::default().title(" Episodes ").borders(Borders::ALL));
+        frame.render_widget(ep_list, chunks[2]);
+    }
+
+    fn build_flag_tabs(&self) -> Line<'static> {
+        let mut spans = Vec::new();
+        for (i, flag) in self.flags.iter().enumerate() {
+            if i > 0 {
+                spans.push(Span::raw(" | "));
+            }
+            let style = if i == self.selected_flag {
+                Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+            } else {
+                Style::default()
+            };
+            spans.push(Span::styled(flag.name.clone(), style));
+        }
+        Line::from(spans)
     }
 
     fn build_episode_list(&self) -> Vec<ListItem<'static>> {
@@ -144,5 +169,47 @@ mod tests {
         screen.selected_episode = 1;
         let items = screen.build_episode_list();
         assert_eq!(items.len(), 2);
+    }
+
+    #[test]
+    fn test_detail_screen_flag_switch_left() {
+        let mut screen = DetailScreen::new();
+        screen.flags = vec![
+            Flag { name: "CK".into(), episodes: vec![Episode { name: "1".into(), url: "u1".into() }] },
+            Flag { name: "Bili".into(), episodes: vec![Episode { name: "1".into(), url: "u2".into() }] },
+        ];
+        screen.selected_flag = 1;
+        if screen.selected_flag > 0 {
+            screen.selected_flag -= 1;
+        } else {
+            screen.selected_flag = screen.flags.len() - 1;
+        }
+        assert_eq!(screen.selected_flag, 0);
+        assert_eq!(screen.selected_episode, 0);
+    }
+
+    #[test]
+    fn test_detail_screen_flag_switch_right() {
+        let mut screen = DetailScreen::new();
+        screen.flags = vec![
+            Flag { name: "CK".into(), episodes: vec![Episode { name: "1".into(), url: "u1".into() }] },
+            Flag { name: "Bili".into(), episodes: vec![Episode { name: "1".into(), url: "u2".into() }] },
+        ];
+        screen.selected_flag = 0;
+        let next = (screen.selected_flag + 1) % screen.flags.len();
+        screen.selected_flag = next;
+        assert_eq!(screen.selected_flag, 1);
+    }
+
+    #[test]
+    fn test_detail_screen_flag_switch_wraps_both_sides() {
+        let mut screen = DetailScreen::new();
+        screen.flags = vec![
+            Flag { name: "CK".into(), episodes: vec![Episode { name: "1".into(), url: "u1".into() }] },
+            Flag { name: "Bili".into(), episodes: vec![Episode { name: "1".into(), url: "u2".into() }] },
+        ];
+        screen.selected_flag = 0;
+        screen.selected_flag = screen.flags.len() - 1;
+        assert_eq!(screen.selected_flag, 1);
     }
 }
