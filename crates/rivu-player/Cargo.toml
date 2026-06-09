@@ -6,3 +6,5 @@ description = "RivuTV media playback engine"
 
 [dependencies]
 rivu-core = { path = "../rivu-core" }
+thiserror = "2"
+tokio = { version = "1", features = ["process"] }

@@ -9,3 +9,7 @@ rivu-core = { path = "../rivu-core" }
 reqwest = { version = "0.12", features = ["json"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+async-trait = "0.1"
+thiserror = "2"
+quick-xml = { version = "0.37", features = ["serialize"] }

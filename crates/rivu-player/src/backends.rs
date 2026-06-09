@@ -1,15 +1,12 @@
-pub struct MpvBackend;
+pub use crate::mpv::MpvBackend;
 
-impl MpvBackend {
-    pub fn new() -> Self {
-        Self
-    }
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-    pub fn play(&self, _url: &str) {
-        // TODO: spawn mpv process
-    }
-
-    pub fn stop(&self) {
-        // TODO: kill mpv process
+    #[test]
+    fn test_mpv_backend_can_be_created_via_backends_module() {
+        let backend = MpvBackend::new();
+        assert!(!backend.is_running());
     }
 }
