@@ -13,10 +13,19 @@ impl WoGGSpider {
         Self {
             client: reqwest::Client::builder()
                 .user_agent("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36")
-                .build().unwrap(),
+                .build()
+                .expect("Failed to build reqwest client"),
         }
     }
+}
 
+impl Default for WoGGSpider {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl WoGGSpider {
     fn extract_cloud_path(ext: &Option<Value>) -> Option<(String, String)> {
         let ext = ext.as_ref()?;
         let base = ext.get("_source_base")?.as_str()?.to_string();

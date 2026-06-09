@@ -1,4 +1,5 @@
 pub mod bili;
+pub mod generic;
 pub mod ygp;
 pub mod wogg;
 
@@ -42,10 +43,37 @@ impl SpiderRegistry {
         self.spiders.keys().cloned().collect()
     }
 
+    fn register_generic(&mut self, names: &[&str]) {
+        for name in names {
+            self.spiders.insert(name.to_string(), Box::new(generic::GenericSpider::new(name)));
+        }
+    }
+
     pub fn register_builtin(&mut self) {
         self.register(Box::new(bili::BiliSpider::new()));
         self.register(Box::new(ygp::YGPSpider::new()));
         self.register(Box::new(wogg::WoGGSpider::new()));
+
+        let csp_names = &[
+            "csp_DouDouGuard", "csp_MyDriveGuard", "csp_MusicGuard",
+            "csp_SeedhubGuard", "csp_S_zpsGuard", "csp_T4Guard",
+            "csp_YCyzGuard", "csp_NewCzGuard", "csp_BttwooGuard",
+            "csp_JPJGuard", "csp_LibvioGuard", "csp_NmyswvGuard",
+            "csp_JpysGuard", "csp_AppTTGuard", "csp_AppSxGuard",
+            "csp_AueteGuard", "csp_SixVGuard", "csp_Dm84Guard",
+            "csp_Anime1Guard", "csp_KanqiuGuard", "csp_LiveGzGuard",
+            "csp_AllliveGuard", "csp_Tingshu275Guard", "csp_FirstAidGuard",
+            "csp_KkSsGuard", "csp_UuSsGuard", "csp_MIPanSoGuard",
+            "csp_YpanSoGuard", "csp_BpanSoGuard", "csp_PushGuard",
+            "csp_XPathGuard",
+        ];
+        self.register_generic(csp_names);
+
+        let js_urls = &[
+            "https://gh-proxy.com/https://raw.githubusercontent.com/fantaiying7/EXT/refs/heads/main/drpy2.min.js",
+            "https://git.yylx.win/https://raw.githubusercontent.com/fantaiying7/EXT/refs/heads/main/drpy2.min.js",
+        ];
+        self.register_generic(js_urls);
     }
 }
 
@@ -101,5 +129,25 @@ mod tests {
     async fn test_registry_empty_names() {
         let reg = SpiderRegistry::new();
         assert!(reg.names().is_empty());
+    }
+
+    #[test]
+    fn test_register_builtin_includes_all_csp_names() {
+        let mut reg = SpiderRegistry::new();
+        reg.register_builtin();
+        assert!(reg.contains("csp_BiliGuard"));
+        assert!(reg.contains("csp_YGPGuard"));
+        assert!(reg.contains("csp_WoGGGuard"));
+        assert!(reg.contains("csp_T4Guard"));
+        assert!(reg.contains("csp_AppSxGuard"));
+        assert!(reg.contains("csp_DouDouGuard"));
+        assert!(reg.contains("csp_MusicGuard"));
+    }
+
+    #[test]
+    fn test_register_builtin_includes_js_urls() {
+        let mut reg = SpiderRegistry::new();
+        reg.register_builtin();
+        assert!(reg.contains("https://gh-proxy.com/https://raw.githubusercontent.com/fantaiying7/EXT/refs/heads/main/drpy2.min.js"));
     }
 }

@@ -13,10 +13,19 @@ impl YGPSpider {
         Self {
             client: reqwest::Client::builder()
                 .user_agent("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36")
-                .build().unwrap(),
+                .build()
+                .expect("Failed to build reqwest client"),
         }
     }
+}
 
+impl Default for YGPSpider {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl YGPSpider {
     fn base_url() -> &'static str {
         "https://www.ygdy8.com"
     }

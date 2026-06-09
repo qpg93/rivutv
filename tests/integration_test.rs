@@ -180,7 +180,7 @@ fn test_decoder_full_pipeline_jpeg_embedded() {
     let b64 = "eyJzaXRlcyI6W3sia2V5IjoiayIsIm5hbWUiOiJOIiwidHlwZSI6MCwiYXBpIjoiaHR0cDovL2EuY29tIn1dfQ==";
 
     let mut data = vec![0xFF, 0xD8, 0xFF, 0xE0];
-    data.extend(std::iter::repeat(0x00).take(256));
+    data.extend(std::iter::repeat_n(0x00, 256));
     data.extend(b64.as_bytes());
 
     let decoded = SourceDecoder::decode(&data).unwrap();
@@ -210,7 +210,7 @@ fn test_decoder_json_with_comments_to_source_config() {
 fn test_decoder_bmp_embedded() {
     let b64 = "eyJzaXRlcyI6W3sia2V5IjoiayIsIm5hbWUiOiJOIiwidHlwZSI6MCwiYXBpIjoiaHR0cDovL2EuY29tIn1dfQ==";
     let mut data = vec![0x42, 0x4D];
-    data.extend(std::iter::repeat(0xFF).take(128));
+    data.extend(std::iter::repeat_n(0xFF, 128));
     data.extend(b64.as_bytes());
 
     let decoded = SourceDecoder::decode(&data).unwrap();
@@ -226,4 +226,174 @@ fn test_decoder_complex_source_with_comments() {
     assert_eq!(config.sites.len(), 1);
     assert_eq!(config.sites[0].name, "S1");
     assert!(config.lives.is_some());
+}
+
+#[cfg(test)]
+mod spider_dispatch_tests {
+    use std::collections::HashMap;
+    use async_trait::async_trait;
+    use rivu_core::error::Result;
+    use rivu_core::models::*;
+    use rivu_spider::engine::SpiderApi;
+    use rivu_spider::site_api::SiteApi;
+    use rivu_spider::spider::{Spider, SpiderRegistry};
+
+    struct MockTestSpider;
+
+    #[async_trait]
+    impl Spider for MockTestSpider {
+        fn name(&self) -> &str {
+            "csp_MockTest"
+        }
+
+        async fn home(&self, _site: &Site) -> Result<ApiResult> {
+            Ok(ApiResult {
+                class: Some(vec![Class {
+                    type_id: "1".into(),
+                    type_name: "Movie".into(),
+                    type_flag: None,
+                    filters: None,
+                }]),
+                list: Some(vec![Vod {
+                    vod_id: "1".into(),
+                    vod_name: "Home Test".into(),
+                    ..Default::default()
+                }]),
+                ..Default::default()
+            })
+        }
+
+        async fn category(
+            &self,
+            _site: &Site,
+            type_id: &str,
+            _pg: i32,
+            _filters: &[(&str, &str)],
+        ) -> Result<ApiResult> {
+            Ok(ApiResult {
+                list: Some(vec![Vod {
+                    vod_id: "cat1".into(),
+                    vod_name: format!("Cat {}", type_id),
+                    ..Default::default()
+                }]),
+                ..Default::default()
+            })
+        }
+
+        async fn detail(&self, _site: &Site, ids: &[String]) -> Result<ApiResult> {
+            Ok(ApiResult {
+                list: Some(vec![Vod {
+                    vod_id: ids[0].clone(),
+                    vod_name: "Detail Test".into(),
+                    ..Default::default()
+                }]),
+                ..Default::default()
+            })
+        }
+
+        async fn play(&self, _site: &Site, _flag: &str, url: &str) -> Result<PlayInfo> {
+            Ok(PlayInfo {
+                url: url.into(),
+                headers: HashMap::new(),
+                user_agent: None,
+                referer: None,
+            })
+        }
+
+        async fn search(&self, _site: &Site, keyword: &str, _pg: i32) -> Result<ApiResult> {
+            Ok(ApiResult {
+                list: Some(vec![Vod {
+                    vod_id: "search1".into(),
+                    vod_name: format!("Search {}", keyword),
+                    ..Default::default()
+                }]),
+                ..Default::default()
+            })
+        }
+    }
+
+    fn setup() -> (SpiderApi, Site) {
+        let mut registry = SpiderRegistry::new();
+        registry.register(Box::new(MockTestSpider));
+        let engine = SpiderApi::new(SiteApi::new(), registry);
+        let site = Site {
+            key: "mock".into(),
+            name: "Mock".into(),
+            site_type: 3,
+            api: "csp_MockTest".into(),
+            ext: Some(serde_json::json!({"_source_base": "https://mock.test/"})),
+            ..Default::default()
+        };
+        (engine, site)
+    }
+
+    #[tokio::test]
+    async fn type_0_site_returns_error_for_bad_api() {
+        let registry = SpiderRegistry::new();
+        let api = SpiderApi::new(SiteApi::new(), registry);
+        let site = Site {
+            key: "bad".into(),
+            name: "Bad".into(),
+            site_type: 0,
+            api: "".into(),
+            ..Default::default()
+        };
+        let result = api.home(&site).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn type_3_unknown_spider_returns_error() {
+        let registry = SpiderRegistry::new();
+        let api = SpiderApi::new(SiteApi::new(), registry);
+        let site = Site {
+            key: "unknown".into(),
+            name: "Unknown".into(),
+            site_type: 3,
+            api: "csp_Unknown".into(),
+            ..Default::default()
+        };
+        let result = api.home(&site).await;
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("not found") || err.contains("not implemented"));
+    }
+
+    #[tokio::test]
+    async fn type_3_mock_home() {
+        let (engine, site) = setup();
+        let result = engine.home(&site).await.unwrap();
+        let class = result.class.unwrap();
+        assert_eq!(class[0].type_name, "Movie");
+        assert_eq!(result.list.unwrap()[0].vod_name, "Home Test");
+    }
+
+    #[tokio::test]
+    async fn type_3_mock_category() {
+        let (engine, site) = setup();
+        let result = engine.category(&site, "1", 1, &[]).await.unwrap();
+        assert!(result.list.unwrap()[0].vod_name.contains("Cat 1"));
+    }
+
+    #[tokio::test]
+    async fn type_3_mock_detail() {
+        let (engine, site) = setup();
+        let ids = vec!["vod100".to_string()];
+        let result = engine.detail(&site, &ids).await.unwrap();
+        assert_eq!(result.list.unwrap()[0].vod_name, "Detail Test");
+    }
+
+    #[tokio::test]
+    async fn type_3_mock_play() {
+        let (engine, site) = setup();
+        let result = engine.play(&site, "ck", "http://play.url").await.unwrap();
+        assert_eq!(result.url, "http://play.url");
+    }
+
+    #[tokio::test]
+    async fn type_3_mock_search() {
+        let (engine, site) = setup();
+        let result = engine.search(&site, "martian", 1).await.unwrap();
+        assert!(result.list.unwrap()[0].vod_name.contains("martian"));
+    }
 }

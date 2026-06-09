@@ -2,6 +2,9 @@ use clap::Parser;
 use rivu_config::loader::ConfigLoader;
 use rivu_core::error::Result;
 use rivu_core::models::PlayInfo;
+use rivu_spider::engine::SpiderApi;
+use rivu_spider::site_api::SiteApi;
+use rivu_spider::spider::SpiderRegistry;
 use rivu_ui::app::App;
 use std::collections::HashMap;
 
@@ -70,7 +73,55 @@ fn main() -> Result<()> {
             }
         }
         Cli::Search { keyword } => {
-            println!("Search for '{}' (not yet implemented in CLI mode)", keyword);
+            let config_dir = ConfigLoader::get_config_dir();
+            let mut loader = ConfigLoader::new(&config_dir);
+
+            let source_url = match loader.app_config.source_url.clone() {
+                Some(url) => url,
+                None => {
+                    eprintln!("No source configured. Use: rivu config <url>");
+                    return Ok(());
+                }
+            };
+
+            let rt = tokio::runtime::Runtime::new()?;
+            let config = match rt.block_on(loader.fetch_source(&source_url)) {
+                Ok(c) => c,
+                Err(e) => {
+                    eprintln!("Error loading source: {}", e);
+                    return Ok(());
+                }
+            };
+
+            let mut registry = SpiderRegistry::new();
+            registry.register_builtin();
+            let engine = SpiderApi::new(SiteApi::new(), registry);
+
+            let mut total = 0;
+            for site in &config.sites {
+                let result = rt.block_on(engine.search(site, &keyword, 1));
+                if let Ok(api_result) = result {
+                    if let Some(list) = api_result.list {
+                        if !list.is_empty() {
+                            println!("{} {}:", "─".repeat(4), site.name);
+                            for vod in &list {
+                                if let Some(ref remarks) = vod.vod_remarks {
+                                    println!("  {} [{}]", vod.vod_name, remarks);
+                                } else {
+                                    println!("  {}", vod.vod_name);
+                                }
+                            }
+                            total += list.len();
+                        }
+                    }
+                }
+            }
+
+            if total == 0 {
+                println!("No results found for '{}'", keyword);
+            } else {
+                println!("\n{} result(s) found for '{}'", total, keyword);
+            }
         }
         Cli::Play { url } => {
             let player = rivu_player::MpvBackend::new();

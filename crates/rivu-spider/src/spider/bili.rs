@@ -14,10 +14,19 @@ impl BiliSpider {
         Self {
             client: reqwest::Client::builder()
                 .user_agent("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36")
-                .build().unwrap(),
+                .build()
+                .expect("Failed to build reqwest client"),
         }
     }
+}
 
+impl Default for BiliSpider {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl BiliSpider {
     fn tid_to_rid(tid: &str) -> &str {
         match tid {
             "1" => "1",   "2" => "3",   "3" => "4",
