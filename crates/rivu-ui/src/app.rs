@@ -1,4 +1,5 @@
 use std::io;
+use std::sync::LazyLock;
 
 use crossterm::event::KeyCode;
 use ratatui::backend::CrosstermBackend;
@@ -11,6 +12,10 @@ use rivu_core::models::Vod;
 use rivu_player::MpvBackend;
 use rivu_spider::extractor::SourceExtractor;
 use rivu_spider::site_api::SiteApi;
+
+static RT: LazyLock<tokio::runtime::Runtime> = LazyLock::new(|| {
+    tokio::runtime::Runtime::new().expect("Failed to create tokio runtime for API calls")
+});
 
 use crate::screens::{detail::DetailScreen, home::HomeScreen, search::SearchScreen};
 
@@ -61,8 +66,7 @@ impl App {
             Some(s) => s,
             None => return,
         };
-        let handle = tokio::runtime::Handle::current();
-        let result = handle.block_on(self.api.home(&site));
+        let result = RT.block_on(self.api.home(&site));
         match result {
             Ok(api_result) => {
                 self.home.categories = api_result.class.unwrap_or_default();
@@ -87,8 +91,7 @@ impl App {
             Some(c) => c.type_id.clone(),
             None => return,
         };
-        let handle = tokio::runtime::Handle::current();
-        let result = handle.block_on(self.api.category(&site, &tid, 1, &[]));
+        let result = RT.block_on(self.api.category(&site, &tid, 1, &[]));
         match result {
             Ok(api_result) => {
                 self.home.vod_list = api_result.list.unwrap_or_default();
@@ -111,8 +114,7 @@ impl App {
             Some(v) => v.clone(),
             None => return,
         };
-        let handle = tokio::runtime::Handle::current();
-        let result = handle.block_on(self.api.detail(&site, std::slice::from_ref(&vod.vod_id)));
+        let result = RT.block_on(self.api.detail(&site, std::slice::from_ref(&vod.vod_id)));
         match result {
             Ok(api_result) => {
                 if let Some(list) = api_result.list {
@@ -147,8 +149,7 @@ impl App {
             Some(e) => e.clone(),
             None => return Ok(()),
         };
-        let handle = tokio::runtime::Handle::current();
-        let play_info = handle.block_on(self.api.play(&site, &flag.name, &ep.url))?;
+        let play_info = RT.block_on(self.api.play(&site, &flag.name, &ep.url))?;
         let extractor = SourceExtractor::new();
         let resolved = extractor.extract(&play_info)?;
         self.player.play(&resolved)?;
@@ -320,8 +321,7 @@ impl App {
                         Some(v) => v.clone(),
                         None => return Ok(()),
                     };
-                    let handle = tokio::runtime::Handle::current();
-                    let result = handle.block_on(self.api.detail(&site, std::slice::from_ref(&vod.vod_id)));
+                    let result = RT.block_on(self.api.detail(&site, std::slice::from_ref(&vod.vod_id)));
                     match result {
                         Ok(api_result) => {
                             if let Some(list) = api_result.list {
@@ -348,8 +348,7 @@ impl App {
                     };
                     let query = self.search.query.clone();
                     if !query.is_empty() {
-                        let handle = tokio::runtime::Handle::current();
-                        let result = handle.block_on(self.api.search(&site, &query, 1));
+                        let result = RT.block_on(self.api.search(&site, &query, 1));
                         match result {
                             Ok(api_result) => {
                                 self.search.results = api_result.list.unwrap_or_default();

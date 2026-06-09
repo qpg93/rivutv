@@ -28,8 +28,7 @@ enum Cli {
     },
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
+fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli {
@@ -40,7 +39,8 @@ async fn main() -> Result<()> {
 
             let source_url = loader.app_config.source_url.clone();
             if let Some(url) = source_url {
-                match loader.fetch_source(&url).await {
+                let rt = tokio::runtime::Runtime::new()?;
+                match rt.block_on(loader.fetch_source(&url)) {
                     Ok(config) => {
                         app.set_sites(config.sites.clone());
                         app.load_home();
@@ -82,7 +82,8 @@ async fn main() -> Result<()> {
             };
             player.play(&info)?;
             println!("Press Ctrl+C to stop playback...");
-            tokio::signal::ctrl_c().await?;
+            let rt = tokio::runtime::Runtime::new()?;
+            rt.block_on(tokio::signal::ctrl_c())?;
             player.stop()?;
         }
     }
