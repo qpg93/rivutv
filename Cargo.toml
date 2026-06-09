@@ -22,3 +22,4 @@ rivu-player = { path = "crates/rivu-player" }
 rivu-ui = { path = "crates/rivu-ui" }
 clap = { version = "4", features = ["derive"] }
 tokio = { version = "1", features = ["full"] }
+serde_json = "1"

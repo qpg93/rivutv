@@ -4,6 +4,7 @@ use std::collections::HashMap;
 // ── Source Configuration ──
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default)]
 pub struct SourceConfig {
     pub sites: Vec<Site>,
     pub lives: Option<Vec<Live>>,
@@ -69,6 +70,7 @@ pub struct Rule {
 // ── API Response Types ──
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default)]
 pub struct ApiResult {
     pub class: Option<Vec<Class>>,
     pub list: Option<Vec<Vod>>,
@@ -174,6 +176,7 @@ pub struct PlayInfo {
 // ── Config persistence ──
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct AppConfig {
     pub source_url: Option<String>,
     pub sites: Vec<Site>,

@@ -12,8 +12,6 @@ impl SourceExtractor {
         let url = url.trim();
         if let Some(stripped) = url.strip_prefix("video://") {
             stripped.to_string()
-        } else if url.starts_with("http://") || url.starts_with("https://") {
-            url.to_string()
         } else {
             url.to_string()
         }
