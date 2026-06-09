@@ -103,30 +103,32 @@ fn main() -> Result<()> {
             app.search.query = keyword.clone();
 
             eprint!("Searching {} sites for '{}'", config.sites.len(), keyword);
-            let mut handles = Vec::new();
-            for site in &config.sites {
-                let e = engine.clone();
-                let s = site.clone();
-                let kw = keyword.clone();
-                handles.push(tokio::spawn(async move {
-                    let result = tokio::time::timeout(Duration::from_secs(10), e.search(&s, &kw, 1)).await;
-                    (s.name, result)
-                }));
-            }
-
-            for handle in handles {
-                if let Ok((_name, Ok(Ok(api_result)))) = rt.block_on(handle) {
-                    if let Some(list) = api_result.list {
-                        for vod in list {
-                            app.search.result_sites.push(_name.clone());
-                            app.search.results.push(vod);
-                        }
-                    }
-                    eprint!(".");
-                } else {
-                    eprint!(".");
+            rt.block_on(async {
+                let mut handles = Vec::new();
+                for site in &config.sites {
+                    let e = engine.clone();
+                    let s = site.clone();
+                    let kw = keyword.clone();
+                    handles.push(tokio::spawn(async move {
+                        let result = tokio::time::timeout(Duration::from_secs(10), e.search(&s, &kw, 1)).await;
+                        (s.name, result)
+                    }));
                 }
-            }
+                for handle in handles {
+                    if let Ok((_name, Ok(Ok(api_result)))) = handle.await {
+                        if let Some(list) = api_result.list {
+                            for vod in list {
+                                app.search.result_sites.push(_name.clone());
+                                app.search.results.push(vod);
+                            }
+                        }
+                        eprint!(".");
+                    } else {
+                        eprint!(".");
+                    }
+                }
+            });
+            eprintln!();
             eprintln!();
 
             if app.search.results.is_empty() {
